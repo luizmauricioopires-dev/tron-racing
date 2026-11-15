@@ -143,7 +143,7 @@ final class FrameHub: ObservableObject {
     /// O painel abriu o vídeo e disse o tamanho/bitrate que quer.
     func panelWantsVideo(width: Int, height: Int, bitrate: Int) {
         wanted = true
-        update { $0.w = width; $0.h = height; $0.bitrate = min(bitrate, 1_800_000) } // mais leve para o Wi-Fi do hotspot
+        update { $0.w = width; $0.h = height; $0.bitrate = min(bitrate, 1_200_000) } // leve: menos trabalho para o iPhone e para o Wi-Fi
         lock.lock(); let hasExt = ext != nil; lock.unlock()
         if !hasExt { startStandby() }
         requestKeyFrame()

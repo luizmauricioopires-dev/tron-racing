@@ -33,7 +33,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
         // A ReplayKit só manda quadro quando a tela muda. O painel fecha o vídeo se ficar sem
         // quadro; então a cada 100 ms sem novidade repetimos o último.
         let t = DispatchSource.makeTimerSource(queue: work)
-        t.schedule(deadline: .now() + 0.1, repeating: 0.1)
+        t.schedule(deadline: .now() + 0.5, repeating: 0.5)
         t.setEventHandler { [weak self] in self?.repeatIfIdle() }
         t.resume()
         repeatTimer = t
@@ -59,7 +59,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
         guard type == .video, running, socket != nil else { return }
         // no máximo ~30 quadros/s, e descarta se o anterior ainda está sendo processado (memória)
         let now = CFAbsoluteTimeGetCurrent()
-        if now - lastAcceptAt < 1.0 / 25.0 { return } // ~24 quadros/s bastam para o mapa
+        if now - lastAcceptAt < 1.0 / 15.0 { return } // 15 quadros/s: leve para o iPhone e suficiente para o mapa
         guard let pb = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         var orientation = CGImagePropertyOrientation.up
         if let n = CMGetAttachment(sampleBuffer, key: RPVideoSampleOrientationKey as CFString, attachmentModeOut: nil) as? NSNumber,
@@ -95,7 +95,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
 
     private func repeatIfIdle() {
         guard running, let out = lastOut, !busy else { return }
-        if CFAbsoluteTimeGetCurrent() - lastEncodeAt >= 0.1 { encode(out) }
+        if CFAbsoluteTimeGetCurrent() - lastEncodeAt >= 0.5 { encode(out) } // tela parada: repete só 2x/s
     }
 
     private func encode(_ pb: CVPixelBuffer) {
@@ -107,7 +107,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
     private func makeEncoder() {
         encoder?.invalidate()
         let s = settings
-        guard let e = H264Encoder(width: s.w, height: s.h, bitrate: s.bitrate, fps: 24) else {
+        guard let e = H264Encoder(width: s.w, height: s.h, bitrate: s.bitrate, fps: 15) else {
             log("não consegui criar o codificador \(s.w)x\(s.h)")
             encoder = nil
             return

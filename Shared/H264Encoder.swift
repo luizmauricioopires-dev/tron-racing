@@ -33,8 +33,8 @@ final class H264Encoder {
             // perfil Baseline: o mais simples, qualquer decodificador de painel entende
             (kVTCompressionPropertyKey_ProfileLevel, kVTProfileLevel_H264_Baseline_AutoLevel),
             (kVTCompressionPropertyKey_AllowFrameReordering, NSNumber(value: false)),
-            (kVTCompressionPropertyKey_MaxKeyFrameInterval, NSNumber(value: fps)),
-            (kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration, NSNumber(value: 1)),
+            (kVTCompressionPropertyKey_MaxKeyFrameInterval, NSNumber(value: fps * 2)),
+            (kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration, NSNumber(value: 2)),
             (kVTCompressionPropertyKey_ExpectedFrameRate, NSNumber(value: fps)),
             (kVTCompressionPropertyKey_AverageBitRate, NSNumber(value: bitrate)),
             // teto de bytes por segundo: o painel do MotoNav fechou o vídeo com muito mais que 3 Mbps

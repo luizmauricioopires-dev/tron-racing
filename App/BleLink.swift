@@ -125,6 +125,13 @@ final class BleLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         return Result(panelIp: ip, phoneIp: Net.hotspotAddress() ?? phoneIp)
     }
 
+    /// Manda a hora do iPhone para o painel (o relógio da moto conta do zero desde a ignição).
+    @discardableResult
+    func sendTime() -> Bool {
+        guard peripheral != nil, serialChar != nil, lostAt == nil, !closed else { return false }
+        return write(EcBtp.syncTimeFrame(), label: "hora do iPhone (\(Geo.clock(Date())))")
+    }
+
     func close() {
         if closed { return }
         closed = true

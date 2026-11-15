@@ -232,6 +232,7 @@ struct SettingsScreen: View {
     @State private var pickedVideo: PhotosPickerItem?
     @State private var videoStatus: String?
     @State private var introSound = IntroVideo.withSound
+    @State private var clockMsg: String?
 
     private func importVideo(_ item: PhotosPickerItem?) {
         guard let item = item else { return }
@@ -271,6 +272,16 @@ struct SettingsScreen: View {
                             DarkField(label: "Ou digite o código (ID:CARBIT…)", text: $manualCode)
                             Button("OK") { model.handleQr(manualCode); manualCode = "" }.padding(.bottom, 12)
                         }
+                    }
+                    section("Relógio da moto") {
+                        Button {
+                            clockMsg = DashLink.shared.syncClock() ? "Hora do iPhone enviada ao painel." : "Conecte à moto primeiro."
+                        } label: {
+                            Label("Acertar o relógio agora", systemImage: "clock.arrow.2.circlepath").frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent).tint(UI.accent)
+                        Text(clockMsg ?? "O app acerta sozinho ao conectar (e de novo alguns segundos depois).")
+                            .font(.system(size: 13)).foregroundColor(UI.dim)
                     }
                     section("Acesso Pessoal") {
                         DarkField(label: "Nome da rede (igualzinho, ex.: iPhone)", text: $model.hotspot.ssid)

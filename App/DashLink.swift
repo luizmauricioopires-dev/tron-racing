@@ -152,6 +152,34 @@ final class DashLink {
         }
     }
 
+    // ------------------------------------------------------------------ relógio
+
+    /// O painel descarta a hora recebida no começo quando monta o vídeo: manda de novo depois.
+    private var clockSyncedGen = -1
+
+    private func syncClockLater() {
+        lock.lock()
+        let gen = sessionGen
+        if clockSyncedGen == gen { lock.unlock(); return }
+        clockSyncedGen = gen
+        lock.unlock()
+        for delay in [2.0, 8.0, 30.0] {
+            DispatchQueue.global().asyncAfter(deadline: .now() + delay) {
+                guard self.isRunning, self.currentGen == gen else { return }
+                self.syncClock()
+            }
+        }
+    }
+
+    /// Acerta o relógio da moto com a hora do iPhone (também pelo botão nos Ajustes).
+    @discardableResult
+    func syncClock() -> Bool {
+        lock.lock(); let b = ble; lock.unlock()
+        let ok = b?.sendTime() ?? false
+        if !ok { Log.d("relógio: sem Bluetooth com o painel agora") }
+        return ok
+    }
+
     // ------------------------------------------------------------------ wakeup (10930)
 
     private func wakeupBody() -> [String: Any] { ["phoneType": "Android", "packageName": DashLink.packageName] }
@@ -226,6 +254,7 @@ final class DashLink {
                 if n == 0 { self.watchVideo() }
             }
             self.state("No ar! O painel está recebendo o vídeo.", .video)
+            self.syncClockLater()
             try self.rv.handleData(s)
         }
     }
@@ -334,8 +363,11 @@ final class DashLink {
                 break
             case 0x00010450:
                 try Pxc.write(s, c + 1, timeJson()) // resposta vazia zera o relógio da moto
+                Log.d("C2P -> hora do iPhone (\(Geo.clock(Date())))")
             case 0x00010600:
+                // o painel manda a hora dele e pergunta a certa: responde sempre com a do iPhone
                 try Pxc.write(s, c + 1, timeSyncReply(p.payload))
+                Log.d("C2P -> sincronização de hora respondida com a do iPhone")
             case 0x00010500, 0x00010200, Pxc.cmdKeepalive, Pxc.cmdCheckSn, 0x00010040, 0x000104A0, 0x00010430, 0x00010630:
                 try Pxc.write(s, c + 1)
             default:
@@ -397,14 +429,11 @@ final class DashLink {
             bike = String(decoding: req[16..<min(45, req.count)], as: UTF8.self)
                 .trimmingCharacters(in: CharacterSet(charactersIn: "\u{0} "))
         }
-        let year = Int(bike.prefix(4)) ?? 0
-        let stamp: String
-        if (2020...2099).contains(year) { stamp = bike } else {
-            let f = DateFormatter()
-            f.locale = Locale(identifier: "en_US_POSIX")
-            f.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
-            stamp = f.string(from: Date()) + "000000"
-        }
+        if !bike.isEmpty { Log.d("C2P <- hora que o painel tinha: \(bike)") }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
+        let stamp = f.string(from: Date()) + "000000"
         let a = [UInt8](stamp.utf8)
         for i in 0..<min(29, a.count) { out[16 + i] = a[i] }
         return out

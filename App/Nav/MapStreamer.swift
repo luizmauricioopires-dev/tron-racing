@@ -66,7 +66,7 @@ final class MapStreamer {
         let need = panelActive || previewActive
         if need && timer == nil {
             let t = DispatchSource.makeTimerSource(queue: q)
-            t.schedule(deadline: .now(), repeating: 0.025)
+            t.schedule(deadline: .now(), repeating: 0.01)
             t.setEventHandler { [weak self] in self?.step() }
             t.resume()
             timer = t
@@ -82,19 +82,20 @@ final class MapStreamer {
 
     /// Sempre o codificador do processador: assim o vídeo não muda de formato quando o iPhone
     /// bloqueia ou desbloqueia (essa troca no meio da transmissão travava o painel).
-    /// 8 quadros/s com a tela ligada, 5 com o iPhone bloqueado.
+    /// Fluxo contínuo (como o app original): 20 quadros/s com a tela ligada, 12 bloqueado.
+    /// Com pouco tráfego o Wi-Fi do painel "cochila" e ele passa a pedir quadros devagar.
     private func step() {
         tick += 1
         let foreground = AppForeground.isActive
         if lastFg != foreground {
             lastFg = foreground
-            if panelActive { Log.d("mapa: \(foreground ? "tela ligada, 8" : "iPhone bloqueado, 5") quadros/s") }
+            if panelActive { Log.d("mapa: \(foreground ? "tela ligada, 20" : "iPhone bloqueado, 12") quadros/s") }
         }
         let now = Date()
-        let interval = panelActive ? (foreground ? 0.125 : 0.2) : 0.5
+        let interval = panelActive ? (foreground ? 0.05 : 0.083) : 0.5
         if now.timeIntervalSince(lastFrameAt) < interval - 0.01 { return }
         // o painel ainda não buscou os anteriores: espera (melhor que descartar e quebrar o vídeo)
-        if panelActive && FrameHub.shared.backlog >= 2 && !forceKey { waits += 1; return }
+        if panelActive && FrameHub.shared.backlog >= 3 && !forceKey { waits += 1; return }
         lastFrameAt = now
         guard let r = renderer else { return }
         let wantPreview = previewActive && foreground && tick % 20 == 0
@@ -105,7 +106,7 @@ final class MapStreamer {
         if let img = img, let cb = onPreview { DispatchQueue.main.async { cb(img) } }
         guard panelActive else { return }
         if sw == nil || sw!.width != w {
-            sw = SoftEncoder(width: w, height: h, fps: 8, bitrate: 900_000)
+            sw = SoftEncoder(width: w, height: h, fps: 20, bitrate: 1_500_000)
             forceKey = true
             if sw == nil { Log.d("vídeo do mapa: não consegui criar o codificador"); return }
         }

@@ -78,9 +78,16 @@ final class RvServer {
         var sent = 0, bytes = 0
         var lastReport = Date()
         let zero: [UInt8] = [0, 0, 0, 0]
+        var polls = 0, empty = 0
+        var lastPoll = CFAbsoluteTimeGetCurrent()
+        var maxGap = 0.0
         while true {
             let (cmd, _) = try readCmd(s)
             lock.lock(); _lastPollAt = Date(); lock.unlock()
+            let nowPoll = CFAbsoluteTimeGetCurrent()
+            maxGap = max(maxGap, nowPoll - lastPoll)
+            lastPoll = nowPoll
+            polls += 1
             if cmd != RvServer.reqDataNext {
                 Log.d(String(format: "RV-DATA <- comando inesperado 0x%04X", cmd))
                 continue
@@ -88,7 +95,7 @@ final class RvServer {
             var frame = hub.frames.poll(timeout: 0.025)
             // só começa a mandar a partir de um quadro-chave
             while let f = frame, waitingKey, !f.key { frame = hub.frames.pollNow() }
-            guard let f = frame else { try s.write(zero); continue }
+            guard let f = frame else { empty += 1; try s.write(zero); continue }
             if f.key { waitingKey = false }
             let au = RvServer.aud + f.data
             var pkt = [UInt8]()
@@ -107,8 +114,8 @@ final class RvServer {
             }
             sent += 1; bytes += pkt.count
             if Date().timeIntervalSince(lastReport) > 5 {
-                Log.d("RV -> \(sent) quadros (\(bytes / 1024) KB) nos últimos 5 s")
-                sent = 0; bytes = 0; lastReport = Date()
+                Log.d("RV -> \(sent) quadros (\(bytes / 1024) KB) em 5 s; painel pediu \(polls)x (\(empty) sem quadro), maior espera \(Int(maxGap * 1000)) ms")
+                sent = 0; bytes = 0; lastReport = Date(); polls = 0; empty = 0; maxGap = 0
             }
         }
     }

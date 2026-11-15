@@ -59,7 +59,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
         guard type == .video, running, socket != nil else { return }
         // no máximo ~30 quadros/s, e descarta se o anterior ainda está sendo processado (memória)
         let now = CFAbsoluteTimeGetCurrent()
-        if now - lastAcceptAt < 1.0 / 31.0 { return }
+        if now - lastAcceptAt < 1.0 / 25.0 { return } // ~24 quadros/s bastam para o mapa
         guard let pb = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         var orientation = CGImagePropertyOrientation.up
         if let n = CMGetAttachment(sampleBuffer, key: RPVideoSampleOrientationKey as CFString, attachmentModeOut: nil) as? NSNumber,
@@ -107,7 +107,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
     private func makeEncoder() {
         encoder?.invalidate()
         let s = settings
-        guard let e = H264Encoder(width: s.w, height: s.h, bitrate: s.bitrate) else {
+        guard let e = H264Encoder(width: s.w, height: s.h, bitrate: s.bitrate, fps: 24) else {
             log("não consegui criar o codificador \(s.w)x\(s.h)")
             encoder = nil
             return
@@ -165,7 +165,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
         guard let s = socket else { return }
         pendingLock.lock()
         // app não está dando conta (Wi-Fi lento): joga fora e recomeça num quadro-chave
-        if pending > 20 && type == FrameLink.frame {
+        if pending > 6 && type == FrameLink.frame {
             pendingLock.unlock()
             work.async { self.encoder?.requestKeyFrame() }
             return

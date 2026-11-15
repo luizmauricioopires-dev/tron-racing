@@ -13,7 +13,10 @@ final class FrameHub: ObservableObject {
     @Published private(set) var mirroring = false
     @Published private(set) var framesPerSec = 0
 
-    let frames = BlockingQueue<Frame>(capacity: 90)
+    /// Fila curta: se o painel atrasa, descarta e recomeça num quadro-chave (melhor pular que atrasar o mapa).
+    let frames = BlockingQueue<Frame>(capacity: 8)
+    private var overflows = 0
+    private var overflowLogAt = Date.distantPast
     private var server: TCPServer?
     private var ext: TCPSocket?
     private let lock = NSLock()
@@ -91,9 +94,15 @@ final class FrameHub: ObservableObject {
 
     private func push(_ f: Frame) {
         if !frames.offer(f) {
-            // painel parou de consumir: recomeça num quadro-chave
+            // painel atrasou: joga fora o que está velho e recomeça num quadro-chave
             frames.clear()
-            requestKeyFrame()
+            if f.key { frames.offer(f) } else { requestKeyFrame() }
+            overflows += 1
+            if Date().timeIntervalSince(overflowLogAt) > 10 {
+                Log.d("vídeo: painel atrasou, \(overflows) vez(es) pulei quadros velhos para não atrasar o mapa")
+                overflowLogAt = Date()
+                overflows = 0
+            }
         }
         counter += 1
         let now = Date()
@@ -134,7 +143,7 @@ final class FrameHub: ObservableObject {
     /// O painel abriu o vídeo e disse o tamanho/bitrate que quer.
     func panelWantsVideo(width: Int, height: Int, bitrate: Int) {
         wanted = true
-        update { $0.w = width; $0.h = height; $0.bitrate = min(bitrate, 3_000_000) }
+        update { $0.w = width; $0.h = height; $0.bitrate = min(bitrate, 1_800_000) } // mais leve para o Wi-Fi do hotspot
         lock.lock(); let hasExt = ext != nil; lock.unlock()
         if !hasExt { startStandby() }
         requestKeyFrame()

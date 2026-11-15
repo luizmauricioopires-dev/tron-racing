@@ -60,25 +60,31 @@ final class RadarStore {
         load(s: s - 0.01, w: w - 0.01, n: n + 0.01, e: e + 0.01)
     }
 
-    private func load(s: Double, w: Double, n: Double, e: Double) {
+    private static let servers = ["https://overpass-api.de/api/interpreter",
+                                  "https://overpass.kumi.systems/api/interpreter",
+                                  "https://maps.mail.ru/osm/tools/overpass/api/interpreter"]
+
+    private func load(s: Double, w: Double, n: Double, e: Double, attempt: Int = 0) {
         lock.lock()
-        if fetching { lock.unlock(); return }
+        if fetching && attempt == 0 { lock.unlock(); return }
         fetching = true
         lock.unlock()
         let q = "[out:json][timeout:25];node[\"highway\"=\"speed_camera\"](\(s),\(w),\(n),\(e));out body;"
-        var req = URLRequest(url: URL(string: "https://overpass-api.de/api/interpreter")!)
+        var req = URLRequest(url: URL(string: Self.servers[attempt % Self.servers.count])!)
         req.httpMethod = "POST"
         req.setValue("TronRacing/0.2 (app pessoal)", forHTTPHeaderField: "User-Agent")
         req.httpBody = ("data=" + (q.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "")).data(using: .utf8)
         req.timeoutInterval = 30
         URLSession.shared.dataTask(with: req) { data, _, err in
-            defer { self.lock.lock(); self.fetching = false; self.lock.unlock() }
             guard let data = data,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let els = json["elements"] as? [[String: Any]] else {
-                Log.d("radares: não consegui baixar (\(err?.localizedDescription ?? "resposta inválida"))")
+                Log.d("radares: servidor \(attempt + 1) falhou (\(err?.localizedDescription ?? "resposta inválida"))")
+                if attempt + 1 < Self.servers.count { self.load(s: s, w: w, n: n, e: e, attempt: attempt + 1) }
+                else { self.lock.lock(); self.fetching = false; self.lastCenter = nil; self.lock.unlock() }
                 return
             }
+            defer { self.lock.lock(); self.fetching = false; self.lock.unlock() }
             var added = 0
             self.lock.lock()
             for el in els {

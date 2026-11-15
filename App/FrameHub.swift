@@ -59,6 +59,7 @@ final class FrameHub: ObservableObject {
             DispatchQueue.main.async { self.mirroring = true }
             MapStreamer.shared.stopPanel()
             self.frames.clear()
+            self.pushLock.lock(); self.awaitingKey = true; self.pushLock.unlock()
             self.pushSettings()
             while true {
                 guard let msg = try? FrameLink.read(s) else { break }
@@ -80,6 +81,7 @@ final class FrameHub: ObservableObject {
                 Log.d("espelhamento: transmissão de tela parou; volta o mapa próprio")
                 DispatchQueue.main.async { self.mirroring = false }
                 self.frames.clear()
+                self.pushLock.lock(); self.awaitingKey = true; self.pushLock.unlock()
                 if self.wanted {
                     let st = self.currentSettings
                     MapStreamer.shared.startPanel(width: st.w, height: st.h)
@@ -88,16 +90,29 @@ final class FrameHub: ObservableObject {
         }
     }
 
+    /// Quantos quadros o painel ainda não buscou (para o mapa não produzir mais do que ele dá conta).
+    var backlog: Int { frames.count }
+
     /// Quadros do mapa próprio: ignorados enquanto o Waze estiver sendo espelhado.
     private func pushMap(_ f: Frame) {
         if hasExt { return }
         push(f)
     }
 
+    /// Depois de descartar quadros, só volta a mandar a partir de um quadro completo (chave):
+    /// os quadros seguintes dependem dos descartados e chegariam "quebrados" ao painel.
+    private var awaitingKey = false
+    private let pushLock = NSLock()
+
     func push(_ f: Frame) {
+        pushLock.lock(); defer { pushLock.unlock() }
+        if awaitingKey {
+            if !f.key { return }
+            awaitingKey = false
+        }
         if !frames.offer(f) {
             frames.clear()
-            if f.key { frames.offer(f) } else { requestKeyFrame() }
+            if f.key { frames.offer(f) } else { awaitingKey = true; requestKeyFrame() }
             overflows += 1
             if Date().timeIntervalSince(overflowLogAt) > 10 {
                 Log.d("vídeo: painel atrasou, \(overflows) vez(es) pulei quadros velhos para não atrasar o mapa")

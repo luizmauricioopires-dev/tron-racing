@@ -66,7 +66,7 @@ final class MapStreamer {
         let need = panelActive || previewActive
         if need && timer == nil {
             let t = DispatchSource.makeTimerSource(queue: q)
-            t.schedule(deadline: .now(), repeating: 0.1)
+            t.schedule(deadline: .now(), repeating: 0.025)
             t.setEventHandler { [weak self] in self?.step() }
             t.resume()
             timer = t
@@ -76,41 +76,35 @@ final class MapStreamer {
         }
     }
 
+    private var lastFrameAt = Date.distantPast
+    private var lastFg: Bool?
+
+    /// Sempre o codificador do processador: assim o vídeo não muda de formato quando o iPhone
+    /// bloqueia ou desbloqueia (essa troca no meio da transmissão travava o painel).
+    /// 8 quadros/s com a tela ligada, 5 com o iPhone bloqueado.
     private func step() {
         tick += 1
         let foreground = AppForeground.isActive
-        // bloqueado: metade dos quadros (o processador trabalha bem menos)
-        if !foreground && tick % 2 != 0 { return }
-        if !panelActive && tick % 5 != 0 { return } // só prévia: 2 por segundo
+        if lastFg != foreground {
+            lastFg = foreground
+            if panelActive { Log.d("mapa: \(foreground ? "tela ligada, 8" : "iPhone bloqueado, 5") quadros/s") }
+        }
+        let now = Date()
+        let interval = panelActive ? (foreground ? 0.125 : 0.2) : 0.5
+        if now.timeIntervalSince(lastFrameAt) < interval - 0.01 { return }
+        // o painel ainda não buscou os anteriores: espera (melhor que descartar e quebrar o vídeo)
+        if panelActive && FrameHub.shared.backlog >= 2 && !forceKey { return }
+        lastFrameAt = now
         guard let r = renderer else { return }
-        let wantPreview = previewActive && tick % 10 == 0 && foreground
+        let wantPreview = previewActive && foreground && tick % 20 == 0
         guard let out = r.render(NavEngine.shared.snapshot(), makeImage: wantPreview) else { return }
         let (pb, img) = out
         if let img = img, let cb = onPreview { DispatchQueue.main.async { cb(img) } }
         guard panelActive else { return }
-
-        let canHw = foreground && Date().timeIntervalSince(hwBrokenAt) > 3
-        if canHw {
-            if usingSoft { usingSoft = false; forceKey = true; Log.d("vídeo do mapa: chip de vídeo (tela ligada)") }
-            if hw == nil || hw!.rebuildNeeded || hw!.width != w {
-                hw?.invalidate()
-                hw = H264Encoder(width: w, height: h, bitrate: 1_000_000, fps: 10)
-                hw?.onFrame = { [weak self] data, key in self?.emit(data, key) }
-                hw?.onError = { [weak self] msg in
-                    self?.q.async { self?.hwBrokenAt = Date(); self?.hw = nil }
-                    Log.d("vídeo do mapa: \(msg)")
-                }
-                forceKey = true
-            }
-            if forceKey { hw?.requestKeyFrame(); forceKey = false }
-            hw?.encode(pb, pts: CMTime(value: CMTimeValue(tick), timescale: 10))
-            if hw != nil { return }
-        }
-        // processador
-        if !usingSoft { usingSoft = true; forceKey = true; Log.d("vídeo do mapa: processador (iPhone bloqueado)") }
         if sw == nil || sw!.width != w {
-            sw = SoftEncoder(width: w, height: h, fps: 5, bitrate: 600_000)
-            if sw == nil { Log.d("vídeo do mapa: não consegui criar o codificador em software"); return }
+            sw = SoftEncoder(width: w, height: h, fps: 8, bitrate: 700_000)
+            forceKey = true
+            if sw == nil { Log.d("vídeo do mapa: não consegui criar o codificador"); return }
         }
         if let enc = sw!.encode(pb, forceKey: forceKey) {
             forceKey = false
@@ -122,7 +116,7 @@ final class MapStreamer {
         onFrame?(FrameHub.Frame(data: data, key: key))
         sent += 1
         if Date().timeIntervalSince(lastLog) > 15 {
-            Log.d("mapa: \(sent) quadros em 15 s (\(usingSoft ? "processador" : "chip de vídeo"))")
+            Log.d("mapa: \(sent) quadros em 15 s")
             sent = 0
             lastLog = Date()
         }

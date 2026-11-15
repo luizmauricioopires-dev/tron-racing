@@ -11,6 +11,8 @@ final class DashLink {
 
     /// (texto para a tela, fase)
     var onState: ((String, Phase) -> Void)?
+    /// Abre Ajustes > Acesso Pessoal (a rede do iPhone só fica visível com essa tela aberta).
+    var onOpenHotspot: (() -> Void)?
 
     private let lock = NSLock()
     private var running = false
@@ -109,7 +111,9 @@ final class DashLink {
                 }
                 let link = BleLink(dash: d, hotspot: hs) { [weak self] in self?.isRunning ?? false }
                 self.lock.lock(); self.ble = link; self.lock.unlock()
-                if let r = link.provision(state: { self.state($0, .searching) }), self.isRunning {
+                if let r = link.provision(state: { self.state($0, .searching) },
+                                          openHotspot: { DispatchQueue.main.async { self.onOpenHotspot?() } }),
+                   self.isRunning {
                     link.onLost = { [weak self] in
                         // roda fora da fila do Bluetooth (fechar o BLE lá dentro travaria)
                         DispatchQueue.global().async { self?.bleLost() }

@@ -36,11 +36,20 @@ final class AppModel: ObservableObject {
             self?.phase = phase
             self?.connected = DashLink.shared.isRunning
         }
+        DashLink.shared.onOpenHotspot = {
+            // atalho direto para Ajustes > Acesso Pessoal; se o iOS recusar, abre ao menos os Ajustes
+            guard let url = URL(string: "App-prefs:INTERNET_TETHERING") else { return }
+            UIApplication.shared.open(url) { ok in
+                Log.d("abrindo Ajustes > Acesso Pessoal: \(ok ? "ok" : "recusado")")
+                if !ok, let s = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(s) }
+            }
+        }
     }
 
     func handleQr(_ raw: String) {
         switch Pairing.parse(raw) {
         case .ok(let d):
+            if dash?.id != d.id { UserDefaults.standard.removeObject(forKey: BleLink.knownKey) }
             dash = d
             Pairing.save(d)
             message = "Painel \(d.name) pareado."

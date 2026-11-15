@@ -15,7 +15,8 @@ final class BleLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     static let service = CBUUID(string: "0000B360-D6D8-C7EC-BDF0-EAB1BFC6BCBC")
     static let serial = CBUUID(string: "0000B362-D6D8-C7EC-BDF0-EAB1BFC6BCBC")
     private static let scanSeconds: TimeInterval = 20
-    private static let netInfoSeconds: TimeInterval = 45
+    private static let netInfoSeconds: TimeInterval = 75
+    static let knownKey = "panelPeripheral"
 
     struct Result { let panelIp: String; let phoneIp: String }
 
@@ -59,7 +60,7 @@ final class BleLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         return nil
     }
 
-    func provision(state: (String) -> Void) -> Result? {
+    func provision(state: (String) -> Void, openHotspot: () -> Void) -> Result? {
         // o CoreBluetooth leva um instante para dizer se o Bluetooth está ligado
         let until = Date().addingTimeInterval(5)
         while central.state == .unknown || central.state == .resetting, Date() < until { Thread.sleep(forTimeInterval: 0.1) }
@@ -76,14 +77,26 @@ final class BleLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             state("Cadastre o nome e a senha do Acesso Pessoal.")
             return fail("Acesso Pessoal não cadastrado")
         }
-        state("Procurando a moto no Bluetooth (ligue a moto e abra a tela do QR no painel)...")
-        guard let dev = findDevice() else {
-            return fail("painel \(dash.bleName ?? "") não apareceu no Bluetooth em \(Int(BleLink.scanSeconds)) s")
+        // painel já conhecido: conecta direto pelo identificador, sem busca. Funciona com o app em
+        // segundo plano (a busca em segundo plano o iOS restringe).
+        var linked = false
+        if let k = knownPeripheral() {
+            state("Conectando na moto pelo Bluetooth...")
+            Log.d("BLE: tentando o painel já conhecido (\(k.name ?? k.identifier.uuidString))")
+            linked = connect(k, attempts: 2)
+        }
+        if !linked {
+            if !alive() { return nil }
+            state("Procurando a moto no Bluetooth (ligue a moto e abra a tela do QR no painel)...")
+            guard let dev = findDevice() else {
+                return fail("painel \(dash.bleName ?? "") não apareceu no Bluetooth em \(Int(BleLink.scanSeconds)) s")
+            }
+            if !alive() { return nil }
+            state("Moto encontrada. Conectando no Bluetooth...")
+            guard connect(dev, attempts: 4) else { return fail("achou o painel, mas a conexão Bluetooth (b362) falhou") }
         }
         found = true
-        if !alive() { return nil }
-        state("Moto encontrada. Conectando no Bluetooth...")
-        guard connect(dev) else { return fail("achou o painel, mas a conexão Bluetooth (b362) falhou") }
+        if let p = peripheral { UserDefaults.standard.set(p.identifier.uuidString, forKey: BleLink.knownKey) }
         guard handshake() else { return fail(why.isEmpty ? "painel não respondeu status=2 ao BUILD_NET" : why) }
         if !alive() { return nil }
 
@@ -93,7 +106,11 @@ final class BleLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         }
         Log.d("Acesso Pessoal: \"\(hotspot.ssid)\", iPhone em \(phoneIp)")
         frames.clear()
-        state("Passando o Acesso Pessoal para o painel (uns 15 s)... Deixe o Acesso Pessoal ligado.")
+        // o iPhone só deixa a rede visível com a tela do Acesso Pessoal aberta: abre os Ajustes agora
+        state("Abrindo Ajustes > Acesso Pessoal. FIQUE NESSA TELA até o painel entrar (até 1 min).")
+        openHotspot()
+        Thread.sleep(forTimeInterval: 4)
+        if !alive() { return nil }
         guard write(ap, label: "AP_INFO (hotspot, senha oculta)") else { return fail("falhou ao mandar o hotspot (0x52)") }
         guard let ip = waitPanelIp(phoneIp: phoneIp) else {
             return fail("hotspot enviado, mas o painel não entrou no Acesso Pessoal em \(Int(BleLink.netInfoSeconds)) s " +
@@ -188,8 +205,13 @@ final class BleLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
 
     // ------------------------------------------------------------------ GATT
 
-    private func connect(_ p: CBPeripheral) -> Bool {
-        for attempt in 1...4 {
+    private func knownPeripheral() -> CBPeripheral? {
+        guard let s = UserDefaults.standard.string(forKey: BleLink.knownKey), let id = UUID(uuidString: s) else { return nil }
+        return queue.sync { central.retrievePeripherals(withIdentifiers: [id]).first }
+    }
+
+    private func connect(_ p: CBPeripheral, attempts: Int) -> Bool {
+        for attempt in 1...attempts {
             if !alive() { return false }
             events.clear()
             serialChar = nil

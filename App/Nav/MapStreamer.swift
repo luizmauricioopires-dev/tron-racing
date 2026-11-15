@@ -77,6 +77,7 @@ final class MapStreamer {
     }
 
     private var lastFrameAt = Date.distantPast
+    private var renderMs = 0.0, encodeMs = 0.0, measured = 0, waits = 0
     private var lastFg: Bool?
 
     /// Sempre o codificador do processador: assim o vídeo não muda de formato quando o iPhone
@@ -93,20 +94,26 @@ final class MapStreamer {
         let interval = panelActive ? (foreground ? 0.125 : 0.2) : 0.5
         if now.timeIntervalSince(lastFrameAt) < interval - 0.01 { return }
         // o painel ainda não buscou os anteriores: espera (melhor que descartar e quebrar o vídeo)
-        if panelActive && FrameHub.shared.backlog >= 2 && !forceKey { return }
+        if panelActive && FrameHub.shared.backlog >= 2 && !forceKey { waits += 1; return }
         lastFrameAt = now
         guard let r = renderer else { return }
         let wantPreview = previewActive && foreground && tick % 20 == 0
+        let t0 = CFAbsoluteTimeGetCurrent()
         guard let out = r.render(NavEngine.shared.snapshot(), makeImage: wantPreview) else { return }
+        renderMs += (CFAbsoluteTimeGetCurrent() - t0) * 1000
         let (pb, img) = out
         if let img = img, let cb = onPreview { DispatchQueue.main.async { cb(img) } }
         guard panelActive else { return }
         if sw == nil || sw!.width != w {
-            sw = SoftEncoder(width: w, height: h, fps: 8, bitrate: 700_000)
+            sw = SoftEncoder(width: w, height: h, fps: 8, bitrate: 900_000)
             forceKey = true
             if sw == nil { Log.d("vídeo do mapa: não consegui criar o codificador"); return }
         }
-        if let enc = sw!.encode(pb, forceKey: forceKey) {
+        let t1 = CFAbsoluteTimeGetCurrent()
+        let enc = sw!.encode(pb, forceKey: forceKey)
+        encodeMs += (CFAbsoluteTimeGetCurrent() - t1) * 1000
+        measured += 1
+        if let enc = enc {
             forceKey = false
             emit(enc.0, enc.1)
         }
@@ -116,7 +123,9 @@ final class MapStreamer {
         onFrame?(FrameHub.Frame(data: data, key: key))
         sent += 1
         if Date().timeIntervalSince(lastLog) > 15 {
-            Log.d("mapa: \(sent) quadros em 15 s")
+            let m = max(1, measured)
+            Log.d("mapa: \(sent) quadros em 15 s (desenho \(Int(renderMs / Double(m))) ms, vídeo \(Int(encodeMs / Double(m))) ms, esperou o painel \(waits)x)")
+            renderMs = 0; encodeMs = 0; measured = 0; waits = 0
             sent = 0
             lastLog = Date()
         }

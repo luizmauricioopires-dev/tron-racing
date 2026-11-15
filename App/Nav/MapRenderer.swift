@@ -72,7 +72,7 @@ final class MapRenderer {
             ctx.translateBy(x: anchor.x, y: anchor.y)
             ctx.rotate(by: angle)
             ctx.translateBy(x: -center.x, y: -center.y)
-            drawTiles(ctx, center: center, radius: radius, z: z)
+            drawCanvas(ctx, center: center, radius: radius, z: z)
             drawRoute(ctx, s, from: c, center: center, radius: radius, z: z)
             ctx.restoreGState()
 
@@ -99,23 +99,64 @@ final class MapRenderer {
 
     // ------------------------------------------------------------------ mapa
 
-    private func drawTiles(_ ctx: CGContext, center: CGPoint, radius: CGFloat, z: Int) {
+    // Mapa montado de uma vez numa imagem grande (sem girar); a cada quadro só giramos essa
+    // imagem pronta. Bem mais leve do que redesenhar todos os pedaços girando.
+    private var canvas: CGImage?
+    private var canvasCenter = CGPoint.zero
+    private var canvasZ = -1
+    private var canvasComplete = false
+    private var canvasBuiltAt = Date.distantPast
+    private let canvasSize: CGFloat = 1792
+
+    private func drawCanvas(_ ctx: CGContext, center: CGPoint, radius: CGFloat, z: Int) {
+        let half = canvasSize / 2
+        let moved = hypot(center.x - canvasCenter.x, center.y - canvasCenter.y)
+        let needsRebuild = canvas == nil || canvasZ != z || moved > half - radius - 8 ||
+            (!canvasComplete && Date().timeIntervalSince(canvasBuiltAt) > 1)
+        if needsRebuild { buildCanvas(center: CGPoint(x: center.x.rounded(), y: center.y.rounded()), z: z) }
+        guard let img = canvas else { return }
+        let rect = CGRect(x: canvasCenter.x - half, y: canvasCenter.y - half, width: canvasSize, height: canvasSize)
+        ctx.saveGState()
+        ctx.interpolationQuality = .low
+        ctx.translateBy(x: rect.minX, y: rect.maxY)
+        ctx.scaleBy(x: 1, y: -1)
+        ctx.draw(img, in: CGRect(x: 0, y: 0, width: rect.width, height: rect.height))
+        ctx.restoreGState()
+    }
+
+    private func buildCanvas(center: CGPoint, z: Int) {
+        let n = Int(canvasSize)
+        guard let c = CGContext(data: nil, width: n, height: n, bitsPerComponent: 8, bytesPerRow: 0,
+                                space: CGColorSpaceCreateDeviceRGB(),
+                                bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue) else { return }
+        c.setFillColor(Self.bg.cgColor)
+        c.fill(CGRect(x: 0, y: 0, width: n, height: n))
+        // coordenadas como no painel (y para baixo), com origem no canto da imagem
+        c.translateBy(x: 0, y: CGFloat(n))
+        c.scaleBy(x: 1, y: -1)
+        let half = canvasSize / 2
+        let origin = CGPoint(x: center.x - half, y: center.y - half)
         let t = CGFloat(tile)
-        let x0 = Int(floor((center.x - radius) / t)), x1 = Int(floor((center.x + radius) / t))
-        let y0 = Int(floor((center.y - radius) / t)), y1 = Int(floor((center.y + radius) / t))
+        let x0 = Int(floor(origin.x / t)), x1 = Int(floor((origin.x + canvasSize) / t))
+        let y0 = Int(floor(origin.y / t)), y1 = Int(floor((origin.y + canvasSize) / t))
+        var complete = true
+        c.interpolationQuality = .medium
         for ty in y0...y1 {
             for tx in x0...x1 {
-                let rect = CGRect(x: CGFloat(tx) * t, y: CGFloat(ty) * t, width: t, height: t)
-                guard let img = TileCache.shared.image(z: z, x: tx, y: ty) else { continue }
-                // a imagem é desenhada de cabeça para baixo num contexto invertido: desvira localmente
-                ctx.saveGState()
-                ctx.translateBy(x: rect.minX, y: rect.maxY)
-                ctx.scaleBy(x: 1, y: -1)
-                ctx.interpolationQuality = .medium
-                ctx.draw(img, in: CGRect(x: 0, y: 0, width: t + 0.5, height: t + 0.5))
-                ctx.restoreGState()
+                guard let img = TileCache.shared.image(z: z, x: tx, y: ty) else { complete = false; continue }
+                let r = CGRect(x: CGFloat(tx) * t - origin.x, y: CGFloat(ty) * t - origin.y, width: t, height: t)
+                c.saveGState()
+                c.translateBy(x: r.minX, y: r.maxY)
+                c.scaleBy(x: 1, y: -1)
+                c.draw(img, in: CGRect(x: 0, y: 0, width: t + 0.5, height: t + 0.5))
+                c.restoreGState()
             }
         }
+        canvas = c.makeImage()
+        canvasCenter = center
+        canvasZ = z
+        canvasComplete = complete
+        canvasBuiltAt = Date()
     }
 
     private func drawRoute(_ ctx: CGContext, _ s: NavEngine.Snapshot, from c: CLLocationCoordinate2D,
@@ -150,12 +191,14 @@ final class MapRenderer {
         path.addLine(to: CGPoint(x: p.x, y: p.y + 7))
         path.addLine(to: CGPoint(x: p.x - 14, y: p.y + 15))
         path.closeSubpath()
-        ctx.saveGState()
-        ctx.setShadow(offset: .zero, blur: 14, color: Self.user.cgColor)
+        ctx.addPath(path)
+        ctx.setStrokeColor(Self.user.withAlphaComponent(0.35).cgColor)
+        ctx.setLineWidth(9)
+        ctx.setLineJoin(.round)
+        ctx.strokePath()
         ctx.addPath(path)
         ctx.setFillColor(Self.user.cgColor)
         ctx.fillPath()
-        ctx.restoreGState()
         ctx.addPath(path)
         ctx.setStrokeColor(UIColor.white.cgColor)
         ctx.setLineWidth(2.5)

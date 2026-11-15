@@ -33,6 +33,9 @@ SoftH264 *sh264_create(int w, int h, float fps, int bitrate) {
     (*s->enc)->SetOption(s->enc, ENCODER_OPTION_TRACE_LEVEL, &quiet);
     int fmt = videoFormatI420;
     (*s->enc)->SetOption(s->enc, ENCODER_OPTION_DATAFORMAT, &fmt);
+    // nunca pular quadro para segurar a taxa: o painel desiste se ficar sem quadro novo
+    bool noSkip = false;
+    (*s->enc)->SetOption(s->enc, ENCODER_OPTION_RC_FRAME_SKIP, &noSkip);
     int idr = (int)(fps * 2); // quadro-chave a cada ~2 s
     (*s->enc)->SetOption(s->enc, ENCODER_OPTION_IDR_INTERVAL, &idr);
     s->w = w; s->h = h; s->fps = fps;

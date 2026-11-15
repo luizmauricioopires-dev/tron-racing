@@ -31,12 +31,15 @@ final class KeepAlive: NSObject, CLLocationManagerDelegate {
         DispatchQueue.main.async {
             let wasEmpty = self.reasons.isEmpty
             self.reasons.insert(reason)
-            guard wasEmpty else { return }
-            self.requestPermission()
-            if reason != "tela" {
+            // moto conectada ou navegação: o GPS precisa seguir com o iPhone bloqueado. Isso vale
+            // mesmo que o GPS já estivesse ligado só para a tela (era o que derrubava o painel).
+            if reason != "tela" && !self.manager.allowsBackgroundLocationUpdates {
                 self.manager.allowsBackgroundLocationUpdates = true
                 self.manager.showsBackgroundLocationIndicator = true
+                Log.d("GPS liberado para segundo plano (\(reason))")
             }
+            guard wasEmpty else { return }
+            self.requestPermission()
             self.manager.startUpdatingLocation()
             Log.d("GPS ligado (\(reason))")
         }

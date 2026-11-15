@@ -454,6 +454,9 @@ enum AppForeground {
     private static var _active = true
     static var isActive: Bool {
         get { lock.lock(); defer { lock.unlock() }; return _active }
-        set { lock.lock(); _active = newValue; lock.unlock() }
+        set {
+            lock.lock(); let changed = _active != newValue; _active = newValue; lock.unlock()
+            if changed { Log.d(newValue ? "app na tela" : "app em segundo plano (iPhone bloqueado ou outro app)") }
+        }
     }
 }

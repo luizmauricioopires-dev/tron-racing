@@ -1,5 +1,6 @@
 import SwiftUI
 import ReplayKit
+import PhotosUI
 
 @main
 struct TronRacingApp: App {
@@ -9,6 +10,7 @@ struct TronRacingApp: App {
 
     init() {
         _ = NavEngine.shared          // liga o GPS à navegação
+        _ = TripRecorder.shared       // retoma um percurso que estava gravando
         FrameHub.shared.startListening()
     }
 
@@ -96,6 +98,8 @@ struct HomeView: View {
     @EnvironmentObject var nav: NavEngine
     @StateObject private var broadcast = BroadcastTrigger()
     @State private var showNav = false
+    @State private var showTrips = false
+    @ObservedObject private var trips = TripRecorder.shared
     @State private var showSettings = false
     @State private var voiceOn = Voice.shared.enabled
 
@@ -103,24 +107,32 @@ struct HomeView: View {
         ZStack(alignment: .top) {
             UI.bg.ignoresSafeArea()
             ScrollView {
-                VStack(spacing: 18) {
-                    HStack {
-                        Text("Tron Racing").font(.system(size: 20, weight: .bold)).foregroundColor(.white)
-                        Spacer()
+                VStack(spacing: 16) {
+                    ZStack(alignment: .topTrailing) {
+                        Image("HeroBrand").resizable().aspectRatio(contentMode: .fit)
+                            .padding(.horizontal, -20)
                         Button { showSettings = true } label: {
-                            Image(systemName: "gearshape.fill").font(.system(size: 20)).foregroundColor(UI.dim)
-                                .frame(width: 44, height: 44)
+                            Image(systemName: "gearshape.fill").font(.system(size: 19)).foregroundColor(UI.dim)
+                                .frame(width: 42, height: 42).background(Circle().fill(Color.white.opacity(0.06)))
                         }
+                        .padding(.top, 6)
                     }
-                    HeroArt().frame(height: 230)
                     statusRow
                     Button { showNav = true } label: {
-                        BigCard(color: UI.slate, icon: "location.north.line.fill", title: "Navegação",
+                        BigCard(color: UI.accent, icon: "location.north.line.fill", title: "Navegação",
                                 subtitle: nav.navigating ? "Indo para \(nav.destination?.name ?? "destino")" : "Mapa próprio no painel")
                     }
                     .buttonStyle(.plain)
+                    Button { showTrips = true } label: {
+                        BigCard(color: UI.mint, icon: "book.closed.fill", title: "Diário de Bordo",
+                                subtitle: trips.recording ? "Gravando · \(Geo.formatDistance(trips.current?.distance ?? 0))"
+                                                          : "\(trips.trips.count) percursos · \(String(format: "%.0f", trips.monthSummary.km)) km no mês") {
+                            if trips.recording { Circle().fill(UI.coral).frame(width: 12, height: 12) }
+                        }
+                    }
+                    .buttonStyle(.plain)
                     Button { broadcast.fire() } label: {
-                        BigCard(color: UI.teal, icon: "rectangle.on.rectangle", title: "Espelhar Waze",
+                        BigCard(color: Color(red: 0.35, green: 0.62, blue: 1), icon: "rectangle.on.rectangle", title: "Espelhar Waze",
                                 subtitle: hub.mirroring ? "Espelhando agora · toque para parar" : "A tela do iPhone no painel")
                     }
                     .buttonStyle(.plain)
@@ -128,20 +140,22 @@ struct HomeView: View {
                         BigCard(color: UI.coral, icon: "camera.metering.spot", title: "Radares",
                                 subtitle: "\(nav.radarCount) carregados · voz \(voiceOn ? "ligada" : "desligada")") {
                             Image(systemName: voiceOn ? "speaker.wave.2.fill" : "speaker.slash.fill")
-                                .font(.system(size: 22)).foregroundColor(.white.opacity(0.9))
+                                .font(.system(size: 20)).foregroundColor(UI.dim)
                         }
                     }
                     .buttonStyle(.plain)
+                    Checkers(rows: 2, size: 8).frame(width: 160).padding(.top, 6)
                     Text("Mapa: Mapas da Apple · Radares: © OpenStreetMap. Não mexa no celular pilotando.")
                         .font(.system(size: 11)).foregroundColor(UI.dim.opacity(0.7))
                         .multilineTextAlignment(.center)
-                        .padding(.top, 6).padding(.bottom, 30)
+                        .padding(.bottom, 30)
                 }
                 .padding(.horizontal, 20)
             }
             BroadcastTrigger.Host(trigger: broadcast).frame(width: 1, height: 1).opacity(0.02)
         }
         .fullScreenCover(isPresented: $showNav) { NavigationScreen().environmentObject(nav) }
+        .sheet(isPresented: $showTrips) { TripsScreen() }
         .sheet(isPresented: $showSettings) {
             SettingsScreen().environmentObject(model).environmentObject(hub)
         }
@@ -162,12 +176,13 @@ struct HomeView: View {
             Spacer()
             Button(model.connected ? "Desconectar" : "Conectar") { model.toggleConnection() }
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundColor(model.connected ? UI.coral : UI.bg)
+                .foregroundColor(model.connected ? UI.coral : .white)
                 .padding(.horizontal, 16).padding(.vertical, 10)
-                .background(Capsule().fill(model.connected ? Color.white.opacity(0.08) : UI.mint))
+                .background(Capsule().fill(model.connected ? Color.white.opacity(0.08) : UI.accent))
         }
         .padding(16)
         .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(UI.surface))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(UI.line))
     }
 
     private var title: String {
@@ -214,6 +229,25 @@ struct SettingsScreen: View {
     @State private var scanning = false
     @State private var manualCode = ""
     @State private var voiceOn = Voice.shared.enabled
+    @State private var pickedVideo: PhotosPickerItem?
+    @State private var videoStatus: String?
+    @State private var introSound = IntroVideo.withSound
+
+    private func importVideo(_ item: PhotosPickerItem?) {
+        guard let item = item else { return }
+        videoStatus = "Preparando o vídeo…"
+        Task {
+            do {
+                guard let movie = try await item.loadTransferable(type: PickedMovie.self) else { videoStatus = "Não consegui abrir esse vídeo."; return }
+                IntroVideo.importVideo(from: movie.url) { err in
+                    videoStatus = err ?? "Pronto! Feche e abra o app para ver a abertura."
+                    try? FileManager.default.removeItem(at: movie.url)
+                }
+            } catch {
+                videoStatus = "Não consegui abrir esse vídeo: \(error.localizedDescription)"
+            }
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -232,7 +266,7 @@ struct SettingsScreen: View {
                         Button { scanning = true } label: {
                             Label("Ler QR do painel", systemImage: "qrcode.viewfinder").frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(.borderedProminent).tint(UI.slate)
+                        .buttonStyle(.borderedProminent).tint(UI.accent)
                         HStack(alignment: .bottom) {
                             DarkField(label: "Ou digite o código (ID:CARBIT…)", text: $manualCode)
                             Button("OK") { model.handleQr(manualCode); manualCode = "" }.padding(.bottom, 12)
@@ -252,6 +286,21 @@ struct SettingsScreen: View {
                         Text("Deite o celular com o Waze aberto (rotação desbloqueada) para ocupar o painel inteiro.")
                             .font(.system(size: 13)).foregroundColor(UI.dim)
                     }
+                    section("Vídeo de abertura") {
+                        PhotosPicker(selection: $pickedVideo, matching: .videos) {
+                            Label(IntroVideo.exists ? "Trocar o vídeo" : "Escolher vídeo da galeria", systemImage: "film")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent).tint(UI.accent)
+                        .onChange(of: pickedVideo) { item in importVideo(item) }
+                        if let s = videoStatus { Text(s).font(.system(size: 13)).foregroundColor(UI.dim) }
+                        if IntroVideo.exists {
+                            Toggle("Com som", isOn: $introSound).onChange(of: introSound) { IntroVideo.withSound = $0 }
+                            Button("Remover vídeo", role: .destructive) { IntroVideo.remove(); videoStatus = "Removido: a abertura volta a ser a arte." }
+                        }
+                        Text("O vídeo fica só neste iPhone (não vai para o GitHub nem para o IPA). O TRON Racing aparece por cima.")
+                            .font(.system(size: 13)).foregroundColor(UI.dim)
+                    }
                     section("Voz") {
                         Toggle("Falar curvas e radares", isOn: $voiceOn).onChange(of: voiceOn) { Voice.shared.enabled = $0 }
                     }
@@ -262,7 +311,7 @@ struct SettingsScreen: View {
                     }
                 }
                 .padding(20)
-                .tint(UI.mint)
+                .tint(UI.accent)
             }
             .background(UI.bg.ignoresSafeArea())
             .navigationTitle("Ajustes")

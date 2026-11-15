@@ -196,6 +196,7 @@ final class NavEngine: NSObject, ObservableObject {
 
     private func update(_ l: CLLocation) {
         location = l
+        TripRecorder.shared.add(l)
         if l.course >= 0 && l.speed > 1.5 { lastCourse = l.course }
         if coords.count > 1 { track(l) } else { RadarStore.shared.refreshAround(l.coordinate) }
         checkRadar(l)

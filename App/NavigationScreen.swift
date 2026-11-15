@@ -89,7 +89,7 @@ struct NavigationScreen: View {
             if nav.navigating {
                 HStack(spacing: 16) {
                     ZStack {
-                        RoundedRectangle(cornerRadius: 16).fill(UI.slate)
+                        RoundedRectangle(cornerRadius: 16).fill(UI.accent)
                         Image(systemName: nav.nextStep?.maneuver.symbol ?? "arrow.up")
                             .font(.system(size: 34, weight: .bold)).foregroundColor(.white)
                     }
@@ -129,7 +129,7 @@ struct NavigationScreen: View {
                     }
                     Button { nav.start() } label: {
                         Label("Iniciar", systemImage: "location.north.fill").frame(maxWidth: .infinity).padding(.vertical, 14)
-                            .background(Capsule().fill(UI.mint)).foregroundColor(UI.bg)
+                            .background(Capsule().fill(UI.accent)).foregroundColor(.white)
                     }
                 }
                 .font(.system(size: 17, weight: .semibold)).foregroundColor(.white)

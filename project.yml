@@ -8,8 +8,8 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "0.2.2"
-    CURRENT_PROJECT_VERSION: "7"
+    MARKETING_VERSION: "0.3.0"
+    CURRENT_PROJECT_VERSION: "8"
     TARGETED_DEVICE_FAMILY: "1"
     CODE_SIGNING_ALLOWED: "NO"
     CODE_SIGNING_REQUIRED: "NO"
@@ -45,6 +45,9 @@ targets:
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         UIUserInterfaceStyle: Dark
+        UIAppFonts:
+          - Orbitron.ttf
+          - GreatVibes.ttf
         UIBackgroundModes:
           - location
           - bluetooth-central

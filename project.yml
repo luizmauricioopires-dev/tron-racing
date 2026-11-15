@@ -1,0 +1,77 @@
+name: TronRacing
+options:
+  bundleIdPrefix: br.com.monteiro
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    TARGETED_DEVICE_FAMILY: "1"
+    CODE_SIGNING_ALLOWED: "NO"
+    CODE_SIGNING_REQUIRED: "NO"
+    CODE_SIGN_IDENTITY: ""
+    ENABLE_BITCODE: "NO"
+
+targets:
+  TronRacing:
+    type: application
+    platform: iOS
+    sources:
+      - App
+      - Shared
+    settings:
+      base:
+        PRODUCT_NAME: TronRacing
+        PRODUCT_BUNDLE_IDENTIFIER: br.com.monteiro.tronracing
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        GENERATE_INFOPLIST_FILE: "NO"
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Tron Racing
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UIUserInterfaceStyle: Dark
+        UIBackgroundModes:
+          - location
+          - bluetooth-central
+        NSBluetoothAlwaysUsageDescription: O Tron Racing usa o Bluetooth para falar com o painel da moto.
+        NSCameraUsageDescription: A câmera lê o QR code que aparece no painel da moto.
+        NSLocalNetworkUsageDescription: O painel da moto entra no seu Acesso Pessoal e recebe o vídeo pela rede local.
+        NSLocationWhenInUseUsageDescription: A localização mantém o Tron Racing funcionando com o Waze na frente.
+        NSLocationAlwaysAndWhenInUseUsageDescription: A localização mantém o Tron Racing funcionando com o Waze na frente.
+    dependencies:
+      - target: TronRacingBroadcast
+        embed: true
+
+  TronRacingBroadcast:
+    type: app-extension
+    platform: iOS
+    sources:
+      - Broadcast
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_NAME: TronRacingBroadcast
+        PRODUCT_BUNDLE_IDENTIFIER: br.com.monteiro.tronracing.broadcast
+        GENERATE_INFOPLIST_FILE: "NO"
+        APPLICATION_EXTENSION_API_ONLY: "YES"
+    info:
+      path: Broadcast/Info.plist
+      properties:
+        CFBundleDisplayName: Tron Racing
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.broadcast-services-upload
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).SampleHandler
+          RPBroadcastProcessMode: RPBroadcastProcessModeSampleBuffer

@@ -21,7 +21,7 @@ final class FrameScaler {
         self.width = width
         self.height = height
         VTPixelTransferSessionCreate(allocator: kCFAllocatorDefault, pixelTransferSessionOut: &transfer)
-        VTPixelRotationSessionCreate(allocator: kCFAllocatorDefault, pixelRotationSessionOut: &rotation)
+        VTPixelRotationSessionCreate(kCFAllocatorDefault, &rotation)
         outPool = FrameScaler.makePool(width, height)
     }
 
@@ -90,7 +90,7 @@ final class FrameScaler {
         guard let rotation = rotation, let out = FrameScaler.buffer(outPool) else { return nil }
         let key: CFString = deg == 90 ? kVTRotation_CW90 : (deg == 180 ? kVTRotation_180 : kVTRotation_CCW90)
         VTSessionSetProperty(rotation, key: kVTPixelRotationPropertyKey_Rotation, value: key)
-        guard VTPixelRotationSessionRotateImage(rotation, from: scaled, to: out) == noErr else { return nil }
+        guard VTPixelRotationSessionRotateImage(rotation, scaled, out) == noErr else { return nil }
         return out
     }
 

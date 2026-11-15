@@ -4,6 +4,9 @@ on:
   push:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: macos-15
@@ -36,6 +39,14 @@ jobs:
           cp -R build/Release-iphoneos/TronRacing.app Payload/
           ls Payload/TronRacing.app/PlugIns
           zip -qry TronRacing.ipa Payload
+
+      - name: Publicar em Releases (link fixo para baixar)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete ultima --yes --cleanup-tag || true
+          gh release create ultima TronRacing.ipa --title "Tron Racing (última compilação)" \
+            --notes "Compilado de ${GITHUB_SHA::7}. Baixe o TronRacing.ipa e assine no 3uTools ou Sideloadly." --latest
 
       - uses: actions/upload-artifact@v4
         with:

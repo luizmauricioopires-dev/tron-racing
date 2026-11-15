@@ -173,6 +173,7 @@ final class NavEngine: NSObject, ObservableObject {
         offRouteCount = 0
         announced.removeAll()
         RadarStore.shared.loadAlong(coords)
+        TileCache.shared.prefetch(route: coords)
         if let l = location { update(l) } else { refreshStep() }
     }
 

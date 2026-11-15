@@ -132,7 +132,7 @@ struct HomeView: View {
                         }
                     }
                     .buttonStyle(.plain)
-                    Text("Mapa: © OpenStreetMap © CARTO · Radares: OpenStreetMap. Não mexa no celular pilotando.")
+                    Text("Mapa: Mapas da Apple · Radares: © OpenStreetMap. Não mexa no celular pilotando.")
                         .font(.system(size: 11)).foregroundColor(UI.dim.opacity(0.7))
                         .multilineTextAlignment(.center)
                         .padding(.top, 6).padding(.bottom, 30)

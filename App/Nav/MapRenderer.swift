@@ -9,7 +9,7 @@ final class MapRenderer {
     let height: Int
     private var pool: CVPixelBufferPool?
     private var heading: Double = 0
-    private let tile: Double = 320 // pixels por tile: imagem @2x reduzida, letras maiores no painel
+    private let tile = Double(TileCache.tilePx) // pixels por tile
 
     // cores
     private static let bg = UIColor(red: 0.04, green: 0.05, blue: 0.07, alpha: 1)
@@ -83,7 +83,7 @@ final class MapRenderer {
                 if p.x > panelW && p.x < W && p.y > 0 && p.y < H { drawRadarPin(ctx, at: p, limit: r.maxspeed) }
             }
             drawUser(ctx, at: anchor)
-            text("© OpenStreetMap © CARTO", 9, .regular, Self.gray.withAlphaComponent(0.7),
+            text("Mapas da Apple", 9, .regular, Self.gray.withAlphaComponent(0.7),
                  in: CGRect(x: panelW + 8, y: H - 15, width: 200, height: 12))
         } else {
             text("Aguardando GPS…", 24, .semibold, Self.gray, in: CGRect(x: 0, y: H / 2 - 16, width: W, height: 32), align: .center)

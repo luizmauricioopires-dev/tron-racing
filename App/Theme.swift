@@ -113,7 +113,7 @@ enum MotoArt {
         for k in 0..<5 {
             let a = angle + Double(k) * 2 * .pi / 5
             spokes.move(to: c)
-            spokes.addLine(to: CGPoint(x: c.x + cos(a) * rim, y: c.y + sin(a) * rim))
+            spokes.addLine(to: CGPoint(x: c.x + CGFloat(cos(a)) * rim, y: c.y + CGFloat(sin(a)) * rim))
         }
         g.stroke(spokes, with: .color(Color(red: 0.55, green: 0.59, blue: 0.66)), lineWidth: r * 0.08)
         g.fill(Path(ellipseIn: CGRect(x: c.x - r * 0.2, y: c.y - r * 0.2, width: r * 0.4, height: r * 0.4)), with: .color(Color(red: 0.12, green: 0.13, blue: 0.2)))

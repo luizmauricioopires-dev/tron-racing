@@ -8,8 +8,8 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "0.1.3"
-    CURRENT_PROJECT_VERSION: "4"
+    MARKETING_VERSION: "0.2.0"
+    CURRENT_PROJECT_VERSION: "5"
     TARGETED_DEVICE_FAMILY: "1"
     CODE_SIGNING_ALLOWED: "NO"
     CODE_SIGNING_REQUIRED: "NO"
@@ -29,6 +29,10 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: br.com.monteiro.tronracing
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         GENERATE_INFOPLIST_FILE: "NO"
+        SWIFT_OBJC_BRIDGING_HEADER: App/Soft/TronRacing-Bridging-Header.h
+        HEADER_SEARCH_PATHS: $(SRCROOT)/Vendor/openh264/include
+        LIBRARY_SEARCH_PATHS: $(SRCROOT)/Vendor/openh264/lib
+        OTHER_LDFLAGS: ["-lopenh264", "-lc++"]
     info:
       path: App/Info.plist
       properties:
@@ -44,6 +48,7 @@ targets:
         UIBackgroundModes:
           - location
           - bluetooth-central
+          - audio
         NSBluetoothAlwaysUsageDescription: O Tron Racing usa o Bluetooth para falar com o painel da moto.
         NSCameraUsageDescription: A câmera lê o QR code que aparece no painel da moto.
         NSLocalNetworkUsageDescription: O painel da moto entra no seu Acesso Pessoal e recebe o vídeo pela rede local.

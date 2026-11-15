@@ -5,32 +5,43 @@ import ReplayKit
 struct TronRacingApp: App {
     @StateObject private var model = AppModel()
     @Environment(\.scenePhase) private var phase
+    @State private var showSplash = true
 
     init() {
+        _ = NavEngine.shared          // liga o GPS à navegação
         FrameHub.shared.startListening()
     }
 
     var body: some Scene {
         WindowGroup {
-            HomeView()
-                .environmentObject(model)
-                .environmentObject(FrameHub.shared)
-                .preferredColorScheme(.dark)
+            ZStack {
+                HomeView()
+                    .environmentObject(model)
+                    .environmentObject(FrameHub.shared)
+                    .environmentObject(NavEngine.shared)
+                if showSplash {
+                    SplashView { withAnimation(.easeOut(duration: 0.5)) { showSplash = false } }
+                        .transition(.opacity)
+                        .zIndex(1)
+                }
+            }
+            .preferredColorScheme(.dark)
         }
         .onChange(of: phase) { p in AppForeground.isActive = (p == .active) }
     }
 }
 
-/// Estado da tela inicial.
+/// Estado da conexão com a moto.
 final class AppModel: ObservableObject {
     @Published var dash: Dash? = Pairing.load()
     @Published var hotspot: Hotspot = Pairing.loadHotspot() { didSet { Pairing.saveHotspot(hotspot) } }
-    @Published var status = "Pronto. Ligue a moto e toque em CONECTAR."
+    @Published var status = "Toque em Conectar com a moto ligada."
     @Published var phase: DashLink.Phase = .idle
     @Published var connected = false
     @Published var message: String?
 
     init() {
+        if hotspot.ssid.isEmpty { hotspot.ssid = "iPhone" }
         DashLink.shared.onState = { [weak self] text, phase in
             self?.status = text
             self?.phase = phase
@@ -67,8 +78,8 @@ final class AppModel: ObservableObject {
             connected = false
             return
         }
-        guard let d = dash else { message = "Primeiro leia o QR do painel."; return }
-        guard hotspot.isComplete else { message = "Preencha o nome e a senha (8+ letras) do Acesso Pessoal."; return }
+        guard let d = dash else { message = "Primeiro leia o QR do painel (em Ajustes, no canto de cima)."; return }
+        guard hotspot.isComplete else { message = "Preencha o nome e a senha (8+ letras) do Acesso Pessoal em Ajustes."; return }
         phase = .searching
         connected = true
         // faz o iOS perguntar sobre a "Rede Local" logo de cara (sem ela o painel não recebe nada)
@@ -82,298 +93,232 @@ final class AppModel: ObservableObject {
 struct HomeView: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var hub: FrameHub
-    @State private var scanning = false
-    @State private var showLog = false
-    @State private var manualCode = ""
+    @EnvironmentObject var nav: NavEngine
+    @StateObject private var broadcast = BroadcastTrigger()
+    @State private var showNav = false
+    @State private var showSettings = false
+    @State private var voiceOn = Voice.shared.enabled
 
     var body: some View {
-        ZStack {
-            GridBackdrop()
+        ZStack(alignment: .top) {
+            UI.bg.ignoresSafeArea()
             ScrollView {
                 VStack(spacing: 18) {
-                    Header()
-                    StatusCard(phase: model.phase, text: model.status, mirroring: hub.mirroring, fps: hub.framesPerSec)
-
-                    Button(model.connected ? "DESCONECTAR" : "CONECTAR") { model.toggleConnection() }
-                        .buttonStyle(NeonButtonStyle(color: model.connected ? Tron.orange : Tron.cyan, filled: !model.connected))
-
-                    mirrorCard
-                    motoCard
-                    hotspotCard
-                    originalCard
-
-                    Button("DIÁRIO DA CONEXÃO") { showLog = true }
-                        .buttonStyle(NeonButtonStyle(color: Tron.dim))
-                    Text("Projeto pessoal, sem relação com a Zontes ou a Carbit. Não mexa no celular pilotando.")
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(Tron.dim)
+                    HStack {
+                        Text("Tron Racing").font(.system(size: 20, weight: .bold)).foregroundColor(.white)
+                        Spacer()
+                        Button { showSettings = true } label: {
+                            Image(systemName: "gearshape.fill").font(.system(size: 20)).foregroundColor(UI.dim)
+                                .frame(width: 44, height: 44)
+                        }
+                    }
+                    HeroArt().frame(height: 230)
+                    statusRow
+                    Button { showNav = true } label: {
+                        BigCard(color: UI.slate, icon: "location.north.line.fill", title: "Navegação",
+                                subtitle: nav.navigating ? "Indo para \(nav.destination?.name ?? "destino")" : "Mapa próprio no painel")
+                    }
+                    .buttonStyle(.plain)
+                    Button { broadcast.fire() } label: {
+                        BigCard(color: UI.teal, icon: "rectangle.on.rectangle", title: "Espelhar Waze",
+                                subtitle: hub.mirroring ? "Espelhando agora · toque para parar" : "A tela do iPhone no painel")
+                    }
+                    .buttonStyle(.plain)
+                    Button { voiceOn.toggle(); Voice.shared.enabled = voiceOn } label: {
+                        BigCard(color: UI.coral, icon: "camera.metering.spot", title: "Radares",
+                                subtitle: "\(nav.radarCount) carregados · voz \(voiceOn ? "ligada" : "desligada")") {
+                            Image(systemName: voiceOn ? "speaker.wave.2.fill" : "speaker.slash.fill")
+                                .font(.system(size: 22)).foregroundColor(.white.opacity(0.9))
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    Text("Mapa: © OpenStreetMap © CARTO · Radares: OpenStreetMap. Não mexa no celular pilotando.")
+                        .font(.system(size: 11)).foregroundColor(UI.dim.opacity(0.7))
                         .multilineTextAlignment(.center)
-                        .padding(.bottom, 30)
+                        .padding(.top, 6).padding(.bottom, 30)
                 }
-                .padding(.horizontal, 18)
+                .padding(.horizontal, 20)
             }
-            .scrollDismissesKeyboard(.interactively)
+            BroadcastTrigger.Host(trigger: broadcast).frame(width: 1, height: 1).opacity(0.02)
         }
-        .sheet(isPresented: $scanning) {
-            ZStack(alignment: .bottom) {
-                QRScannerView { code in
-                    scanning = false
-                    model.handleQr(code)
-                }
-                .ignoresSafeArea()
-                Text("Aponte para o QR na tela da moto")
-                    .font(.system(size: 14, weight: .bold, design: .monospaced))
-                    .foregroundColor(Tron.cyan)
-                    .padding()
-                    .background(Tron.ink.opacity(0.8))
-                    .padding(.bottom, 40)
-            }
+        .fullScreenCover(isPresented: $showNav) { NavigationScreen().environmentObject(nav) }
+        .sheet(isPresented: $showSettings) {
+            SettingsScreen().environmentObject(model).environmentObject(hub)
         }
-        .sheet(isPresented: $showLog) { LogView() }
         .alert(model.message ?? "", isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) {
             Button("OK", role: .cancel) {}
         }
     }
 
-    // ------------------------------------------------------------------ cartões
-
-    private var mirrorCard: some View {
-        NeonCard(color: Tron.orange) {
-            NeonTitle(text: "Waze no painel", color: Tron.orange)
-            Text(hub.mirroring
-                 ? "Espelhando a tela do iPhone. Abra o Waze, deite o celular e use normalmente."
-                 : "Toque em ESPELHAR, escolha Tron Racing e Iniciar Transmissão. Depois abra o Waze.")
-                .font(.system(size: 14, design: .monospaced))
-                .foregroundColor(.white.opacity(0.85))
-            BroadcastButton(active: hub.mirroring)
-            Toggle(isOn: Binding(get: { hub.currentSettings.fill }, set: { v in hub.update { $0.fill = v }; hub.objectWillChange.send() })) {
-                label("Preencher a tela (corta as bordas)")
-            }.tint(Tron.orange)
-            Toggle(isOn: Binding(get: { hub.currentSettings.flip }, set: { v in hub.update { $0.flip = v }; hub.objectWillChange.send() })) {
-                label("Inverter giro (se o Waze sair de cabeça para baixo)")
-            }.tint(Tron.orange)
-        }
-    }
-
-    private var motoCard: some View {
-        NeonCard {
-            NeonTitle(text: "Moto")
-            HStack {
-                Image(systemName: model.dash == nil ? "qrcode.viewfinder" : "checkmark.seal.fill")
-                    .foregroundColor(model.dash == nil ? Tron.dim : Tron.cyan)
-                    .font(.system(size: 26))
-                VStack(alignment: .leading) {
-                    Text(model.dash?.name ?? "Nenhum painel pareado")
-                        .font(.system(size: 16, weight: .bold, design: .monospaced)).foregroundColor(.white)
-                    Text(model.dash?.bleName.map { "Bluetooth \($0)" } ?? "Abra no painel a tela do QR do celular")
-                        .font(.system(size: 12, design: .monospaced)).foregroundColor(Tron.dim)
-                }
+    private var statusRow: some View {
+        let color: Color = model.phase == .video ? UI.mint : model.phase == .error ? UI.coral : UI.dim
+        let icon = model.phase == .video ? "link" : model.phase == .idle ? "link.badge.plus" : "arrow.triangle.2.circlepath"
+        return HStack(spacing: 12) {
+            Image(systemName: icon).font(.system(size: 20, weight: .semibold)).foregroundColor(color)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.system(size: 19, weight: .semibold)).foregroundColor(.white)
+                Text(model.status).font(.system(size: 13)).foregroundColor(UI.dim).lineLimit(2)
             }
-            Button("LER QR DO PAINEL") { scanning = true }
-                .buttonStyle(NeonButtonStyle())
-            HStack(alignment: .bottom) {
-                NeonField(label: "OU DIGITE O CÓDIGO (ID:CARBIT…)", text: $manualCode)
-                Button("OK") { model.handleQr(manualCode); manualCode = "" }
-                    .font(.system(size: 15, weight: .heavy, design: .monospaced))
-                    .foregroundColor(Tron.cyan)
-                    .padding(.bottom, 10)
-            }
+            Spacer()
+            Button(model.connected ? "Desconectar" : "Conectar") { model.toggleConnection() }
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(model.connected ? UI.coral : UI.bg)
+                .padding(.horizontal, 16).padding(.vertical, 10)
+                .background(Capsule().fill(model.connected ? Color.white.opacity(0.08) : UI.mint))
         }
-    }
-
-    private var hotspotCard: some View {
-        NeonCard {
-            NeonTitle(text: "Acesso Pessoal")
-            NeonField(label: "NOME DA REDE (Ajustes > Geral > Sobre > Nome)", text: $model.hotspot.ssid)
-            NeonField(label: "SENHA (Ajustes > Acesso Pessoal)", text: $model.hotspot.password, secure: true)
-            VStack(alignment: .leading, spacing: 6) {
-                tip("Ligue \"Permitir Outros Acessarem\" e \"Maximizar Compatibilidade\".")
-                tip("Na hora de conectar, deixe a tela do Acesso Pessoal aberta até o painel entrar.")
-                tip("O painel só usa a rede; não gasta seus dados.")
-            }
-        }
-    }
-
-    private var originalCard: some View {
-        NeonCard(color: Tron.dim) {
-            NeonTitle(text: "Painel original", color: Tron.dim)
-            Text("Para ver o painel da moto, aperte o botão de modo no guidão: o painel sai da projeção e volta sozinho para o Waze quando você apertar de novo. Para encerrar de vez, toque em DESCONECTAR.")
-                .font(.system(size: 14, design: .monospaced))
-                .foregroundColor(.white.opacity(0.8))
-        }
-    }
-
-    private func label(_ s: String) -> some View {
-        Text(s).font(.system(size: 13, design: .monospaced)).foregroundColor(.white.opacity(0.85))
-    }
-
-    private func tip(_ s: String) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Rectangle().fill(Tron.cyan).frame(width: 6, height: 6).padding(.top, 6).shadow(color: Tron.cyan, radius: 3)
-            Text(s).font(.system(size: 12, design: .monospaced)).foregroundColor(Tron.dim)
-        }
-    }
-}
-
-// ====================================================================== peças
-
-struct Header: View {
-    @State private var sweep: CGFloat = 0
-
-    var body: some View {
-        VStack(spacing: 6) {
-            Text("TRON RACING")
-                .font(.system(size: 38, weight: .black, design: .rounded))
-                .kerning(6)
-                .foregroundColor(.white)
-                .shadow(color: Tron.cyan, radius: 2)
-                .shadow(color: Tron.cyan, radius: 10)
-                .shadow(color: Tron.cyan.opacity(0.6), radius: 24)
-            // rastro de luz que corre por baixo do nome
-            GeometryReader { g in
-                ZStack(alignment: .leading) {
-                    Rectangle().fill(Tron.cyan.opacity(0.25)).frame(height: 2)
-                    Rectangle()
-                        .fill(LinearGradient(colors: [.clear, Tron.orange, .white], startPoint: .leading, endPoint: .trailing))
-                        .frame(width: g.size.width * 0.35, height: 3)
-                        .shadow(color: Tron.orange, radius: 6)
-                        .offset(x: (g.size.width * 1.35) * sweep - g.size.width * 0.35)
-                }
-            }
-            .frame(height: 3)
-            .clipped()
-            Text("ZONTES  ·  ESPELHO DO PAINEL")
-                .font(.system(size: 12, weight: .bold, design: .monospaced))
-                .kerning(3)
-                .foregroundColor(Tron.dim)
-        }
-        .padding(.top, 24)
-        .onAppear {
-            withAnimation(.linear(duration: 2.4).repeatForever(autoreverses: false)) { sweep = 1 }
-        }
-    }
-}
-
-struct StatusCard: View {
-    let phase: DashLink.Phase
-    let text: String
-    let mirroring: Bool
-    let fps: Int
-    @State private var spin = false
-
-    private var color: Color {
-        switch phase {
-        case .video: return Tron.cyan
-        case .error: return Tron.orange
-        case .idle: return Tron.dim
-        default: return Tron.cyan
-        }
+        .padding(16)
+        .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(UI.surface))
     }
 
     private var title: String {
-        switch phase {
-        case .idle: return "DESLIGADO"
-        case .searching: return "PROCURANDO"
-        case .linking: return "CONECTANDO"
-        case .video: return "NO AR"
-        case .error: return "ATENÇÃO"
+        switch model.phase {
+        case .idle: return "Desconectado"
+        case .searching: return "Conectando…"
+        case .linking: return "Conectando ao painel…"
+        case .video: return hub.mirroring ? "No painel: Waze" : "No painel: mapa"
+        case .error: return "Atenção"
         }
-    }
-
-    var body: some View {
-        NeonCard(color: color) {
-            HStack(spacing: 16) {
-                ZStack {
-                    Circle().stroke(color.opacity(0.25), lineWidth: 6)
-                    Circle()
-                        .trim(from: 0, to: phase == .video ? 1 : 0.28)
-                        .stroke(color, style: StrokeStyle(lineWidth: 6, lineCap: .round))
-                        .shadow(color: color, radius: 6)
-                        .rotationEffect(.degrees(spin ? 360 : 0))
-                    Image(systemName: phase == .video ? "bolt.fill" : "antenna.radiowaves.left.and.right")
-                        .foregroundColor(color)
-                        .font(.system(size: 20, weight: .bold))
-                }
-                .frame(width: 64, height: 64)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title)
-                        .font(.system(size: 20, weight: .black, design: .monospaced))
-                        .kerning(3)
-                        .foregroundColor(color)
-                        .shadow(color: color, radius: 5)
-                    Text(text)
-                        .font(.system(size: 13, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.85))
-                        .fixedSize(horizontal: false, vertical: true)
-                    if mirroring {
-                        Text("WAZE  ·  \(fps) qps")
-                            .font(.system(size: 11, weight: .bold, design: .monospaced))
-                            .foregroundColor(Tron.orange)
-                    }
-                }
-            }
-        }
-        .onAppear { withAnimation(.linear(duration: 1.6).repeatForever(autoreverses: false)) { spin = true } }
     }
 }
 
-/// O iOS só deixa iniciar a transmissão de tela pelo botão dele (RPSystemBroadcastPickerView).
-/// Ele fica escondido e o nosso botão neon "aperta" o dele.
-struct BroadcastButton: View {
-    let active: Bool
-    @State private var picker = RPSystemBroadcastPickerView(frame: CGRect(x: 0, y: 0, width: 44, height: 44))
+/// O iOS só deixa iniciar a transmissão de tela pelo botão dele: fica escondido e o cartão o aciona.
+final class BroadcastTrigger: ObservableObject {
+    let picker: RPSystemBroadcastPickerView = {
+        let p = RPSystemBroadcastPickerView(frame: CGRect(x: 0, y: 0, width: 44, height: 44))
+        p.preferredExtension = "br.com.monteiro.tronracing.broadcast"
+        p.showsMicrophoneButton = false
+        return p
+    }()
 
-    var body: some View {
-        ZStack {
-            PickerHost(picker: picker).frame(width: 1, height: 1).opacity(0.02)
-            Button(active ? "PARAR ESPELHAMENTO" : "ESPELHAR TELA") {
-                for case let b as UIButton in picker.subviews { b.sendActions(for: .allTouchEvents) }
-            }
-            .buttonStyle(NeonButtonStyle(color: Tron.orange, filled: !active))
-        }
+    func fire() {
+        for case let b as UIButton in picker.subviews { b.sendActions(for: .allTouchEvents) }
     }
 
-    struct PickerHost: UIViewRepresentable {
-        let picker: RPSystemBroadcastPickerView
-        func makeUIView(context: Context) -> RPSystemBroadcastPickerView {
-            picker.preferredExtension = "br.com.monteiro.tronracing.broadcast"
-            picker.showsMicrophoneButton = false
-            return picker
+    struct Host: UIViewRepresentable {
+        let trigger: BroadcastTrigger
+        func makeUIView(context: Context) -> UIView {
+            let v = UIView()
+            v.addSubview(trigger.picker)
+            return v
         }
-        func updateUIView(_ v: RPSystemBroadcastPickerView, context: Context) {}
+        func updateUIView(_ v: UIView, context: Context) {}
     }
 }
 
-struct LogView: View {
-    @ObservedObject var log = Log.shared
+// ====================================================================== ajustes
+
+struct SettingsScreen: View {
+    @EnvironmentObject var model: AppModel
+    @EnvironmentObject var hub: FrameHub
     @Environment(\.dismiss) private var dismiss
+    @State private var scanning = false
+    @State private var manualCode = ""
+    @State private var voiceOn = Voice.shared.enabled
 
     var body: some View {
         NavigationStack {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 2) {
-                        ForEach(Array(log.lines.enumerated()), id: \.offset) { i, line in
-                            Text(line)
-                                .font(.system(size: 10, design: .monospaced))
-                                .foregroundColor(line.contains("falh") || line.contains("erro") ? Tron.orange : Tron.cyan.opacity(0.9))
-                                .id(i)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    section("Moto") {
+                        HStack(spacing: 12) {
+                            Image(systemName: model.dash == nil ? "qrcode.viewfinder" : "checkmark.seal.fill")
+                                .font(.system(size: 26)).foregroundColor(model.dash == nil ? UI.dim : UI.mint)
+                            VStack(alignment: .leading) {
+                                Text(model.dash?.name ?? "Nenhum painel pareado").font(.system(size: 17, weight: .semibold)).foregroundColor(.white)
+                                Text(model.dash == nil ? "Abra no painel a tela do QR do celular" : "Bluetooth \(model.dash?.bleName ?? "-")")
+                                    .font(.system(size: 13)).foregroundColor(UI.dim)
+                            }
+                        }
+                        Button { scanning = true } label: {
+                            Label("Ler QR do painel", systemImage: "qrcode.viewfinder").frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent).tint(UI.slate)
+                        HStack(alignment: .bottom) {
+                            DarkField(label: "Ou digite o código (ID:CARBIT…)", text: $manualCode)
+                            Button("OK") { model.handleQr(manualCode); manualCode = "" }.padding(.bottom, 12)
                         }
                     }
-                    .padding(10)
+                    section("Acesso Pessoal") {
+                        DarkField(label: "Nome da rede (igualzinho, ex.: iPhone)", text: $model.hotspot.ssid)
+                        DarkField(label: "Senha do Acesso Pessoal", text: $model.hotspot.password, secure: true)
+                        Text("Ligue \"Permitir Outros Acessarem\" e \"Maximizar Compatibilidade\". O app abre essa tela sozinho na hora de conectar: fique nela até o painel entrar.")
+                            .font(.system(size: 13)).foregroundColor(UI.dim)
+                    }
+                    section("Espelhar Waze") {
+                        Toggle("Preencher a tela (corta as bordas)", isOn: Binding(get: { hub.currentSettings.fill },
+                                                                                  set: { v in hub.update { $0.fill = v }; hub.objectWillChange.send() }))
+                        Toggle("Inverter giro (se sair de cabeça para baixo)", isOn: Binding(get: { hub.currentSettings.flip },
+                                                                                             set: { v in hub.update { $0.flip = v }; hub.objectWillChange.send() }))
+                        Text("Deite o celular com o Waze aberto (rotação desbloqueada) para ocupar o painel inteiro.")
+                            .font(.system(size: 13)).foregroundColor(UI.dim)
+                    }
+                    section("Voz") {
+                        Toggle("Falar curvas e radares", isOn: $voiceOn).onChange(of: voiceOn) { Voice.shared.enabled = $0 }
+                    }
+                    NavigationLink { LogView() } label: {
+                        HStack { Image(systemName: "doc.text.magnifyingglass"); Text("Diário da conexão"); Spacer(); Image(systemName: "chevron.right") }
+                            .foregroundColor(.white).padding(16)
+                            .background(RoundedRectangle(cornerRadius: 16).fill(UI.surface))
+                    }
                 }
-                .onChange(of: log.lines.count) { n in if n > 0 { proxy.scrollTo(n - 1, anchor: .bottom) } }
+                .padding(20)
+                .tint(UI.mint)
             }
-            .background(Tron.ink)
-            .navigationTitle("Diário")
+            .background(UI.bg.ignoresSafeArea())
+            .navigationTitle("Ajustes")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Fechar") { dismiss() } }
-                ToolbarItem(placement: .primaryAction) {
-                    ShareLink(item: log.text()) { Image(systemName: "square.and.arrow.up") }
-                }
-                ToolbarItem(placement: .bottomBar) { Button("Limpar") { log.clear() } }
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Pronto") { dismiss() } } }
+            .scrollDismissesKeyboard(.interactively)
+        }
+        .sheet(isPresented: $scanning) {
+            ZStack(alignment: .bottom) {
+                QRScannerView { code in scanning = false; model.handleQr(code) }.ignoresSafeArea()
+                Text("Aponte para o QR na tela da moto")
+                    .font(.system(size: 15, weight: .semibold)).foregroundColor(.white)
+                    .padding().background(Capsule().fill(Color.black.opacity(0.7))).padding(.bottom, 40)
             }
+        }
+    }
+
+    private func section<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title.uppercased()).font(.system(size: 12, weight: .bold)).kerning(1).foregroundColor(UI.dim)
+            VStack(alignment: .leading, spacing: 12) { content() }
+                .padding(16)
+                .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(UI.surface))
+                .foregroundColor(.white)
+        }
+    }
+}
+
+// ====================================================================== diário
+
+struct LogView: View {
+    @ObservedObject var log = Log.shared
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 2) {
+                    ForEach(Array(log.lines.enumerated()), id: \.offset) { i, line in
+                        Text(line)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundColor(line.contains("falh") || line.contains("erro") ? UI.coral : UI.mint.opacity(0.9))
+                            .id(i)
+                    }
+                }
+                .padding(10)
+            }
+            .onChange(of: log.lines.count) { n in if n > 0 { proxy.scrollTo(n - 1, anchor: .bottom) } }
+        }
+        .background(UI.bg)
+        .navigationTitle("Diário")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                ShareLink(item: log.text()) { Image(systemName: "square.and.arrow.up") }
+            }
+            ToolbarItem(placement: .bottomBar) { Button("Limpar") { log.clear() } }
         }
     }
 }

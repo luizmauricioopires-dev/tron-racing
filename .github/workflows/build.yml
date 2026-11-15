@@ -13,6 +13,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Cache do OpenH264
+        id: oh264
+        uses: actions/cache@v4
+        with:
+          path: Vendor/openh264
+          key: openh264-v2.4.1-ios16-arm64
+
+      - name: Compilar OpenH264 (codificador para o iPhone bloqueado)
+        if: steps.oh264.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 -b v2.4.1 https://github.com/cisco/openh264 /tmp/openh264
+          cd /tmp/openh264
+          sed -i '' 's/-fembed-bitcode//' build/platform-ios.mk
+          make OS=ios ARCH=arm64 SDK_MIN=16.0 libopenh264.a -j4 > /tmp/oh264.log 2>&1 || (tail -40 /tmp/oh264.log; exit 1)
+          mkdir -p "$GITHUB_WORKSPACE/Vendor/openh264/lib" "$GITHUB_WORKSPACE/Vendor/openh264/include/wels"
+          cp libopenh264.a "$GITHUB_WORKSPACE/Vendor/openh264/lib/"
+          cp codec/api/wels/*.h "$GITHUB_WORKSPACE/Vendor/openh264/include/wels/"
+          ls -la "$GITHUB_WORKSPACE/Vendor/openh264/lib"
+
       - name: Instalar XcodeGen
         run: brew install xcodegen
 
@@ -29,7 +48,7 @@ jobs:
             -sdk iphoneos \
             SYMROOT="$PWD/build" \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-            build | tee build.log | grep -E "error:|warning: .*Swift|BUILD" || true
+            build | tee build.log | grep -E "error:|BUILD" || true
           grep -q "BUILD SUCCEEDED" build.log
           test -d build/Release-iphoneos/TronRacing.app/PlugIns/TronRacingBroadcast.appex
 

@@ -28,7 +28,7 @@ struct QRScannerView: UIViewControllerRepresentable {
                 l.text = "Câmera indisponível.\nLibere em Ajustes > Tron Racing."
                 l.numberOfLines = 0
                 l.textAlignment = .center
-                l.textColor = Tron.orangeUI
+                l.textColor = UI.coralUI
                 l.frame = view.bounds
                 l.autoresizingMask = [.flexibleWidth, .flexibleHeight]
                 view.addSubview(l)

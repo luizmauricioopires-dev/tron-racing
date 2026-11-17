@@ -84,12 +84,13 @@ final class MapRenderer {
             }
             drawUser(ctx, at: anchor)
             text("Mapas da Apple", 9, .regular, Self.gray.withAlphaComponent(0.7),
-                 in: CGRect(x: panelW + 8, y: H - 15, width: 200, height: 12))
+                 in: CGRect(x: W - 210, y: H - 104, width: 200, height: 12), align: .right)
         } else {
             text("Aguardando GPS…", 24, .semibold, Self.gray, in: CGRect(x: 0, y: H / 2 - 16, width: W, height: 32), align: .center)
         }
 
         if s.navigating { drawNavPanel(ctx, s, width: panelW) } else { drawClock(ctx, now) }
+        drawWatermark(ctx, left: panelW)
         drawSpeed(ctx, s)
         if let a = s.radar { drawRadarBanner(ctx, a) }
 
@@ -277,6 +278,27 @@ final class MapRenderer {
              in: CGRect(x: badge.minX, y: badge.midY - 11, width: badge.width, height: 22), align: .center)
         text("RADAR", 14, .heavy, UIColor.white.withAlphaComponent(0.85), in: CGRect(x: r.minX + 64, y: r.minY + 8, width: 160, height: 18))
         text(Geo.formatDistance(a.distance), 26, .heavy, .white, in: CGRect(x: r.minX + 64, y: r.minY + 25, width: 170, height: 32))
+    }
+
+    // ------------------------------------------------------------------ marca (para os vídeos)
+
+    private static let camIcon = UIImage(systemName: "camera.fill",
+        withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .bold))?.withTintColor(.white, renderingMode: .alwaysOriginal)
+
+    private func drawWatermark(_ ctx: CGContext, left: CGFloat) {
+        let d = UserDefaults.standard
+        guard d.object(forKey: "wmOn") as? Bool ?? true else { return }
+        let handle = (d.string(forKey: "wmText") ?? "@vlog.tron").trimmingCharacters(in: .whitespaces)
+        guard !handle.isEmpty else { return }
+        let font = UIFont.systemFont(ofSize: 17, weight: .bold)
+        let tw = (handle as NSString).size(withAttributes: [.font: font]).width
+        let H = CGFloat(height)
+        let r = CGRect(x: left + 12, y: H - 46, width: tw + 50, height: 34)
+        roundRect(ctx, r, 17, UIColor.black.withAlphaComponent(0.55))
+        let badge = CGRect(x: r.minX + 5, y: r.minY + 5, width: 24, height: 24)
+        roundRect(ctx, badge, 7, UIColor(red: 1.0, green: 0.42, blue: 0.16, alpha: 1))
+        Self.camIcon?.draw(in: badge.insetBy(dx: 4, dy: 5))
+        text(handle, 17, .bold, .white, in: CGRect(x: badge.maxX + 8, y: r.minY + 6, width: tw + 6, height: 22))
     }
 
     // ------------------------------------------------------------------ setas

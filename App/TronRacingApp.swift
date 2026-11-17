@@ -233,6 +233,8 @@ struct SettingsScreen: View {
     @State private var videoStatus: String?
     @State private var introSound = IntroVideo.withSound
     @State private var clockMsg: String?
+    @State private var wmOn = UserDefaults.standard.object(forKey: "wmOn") as? Bool ?? true
+    @State private var wmText = UserDefaults.standard.string(forKey: "wmText") ?? "@vlog.tron"
 
     private func importVideo(_ item: PhotosPickerItem?) {
         guard let item = item else { return }
@@ -272,6 +274,12 @@ struct SettingsScreen: View {
                             DarkField(label: "Ou digite o código (ID:CARBIT…)", text: $manualCode)
                             Button("OK") { model.handleQr(manualCode); manualCode = "" }.padding(.bottom, 12)
                         }
+                    }
+                    section("Marca no painel (para seus vídeos)") {
+                        Toggle("Mostrar no mapa do painel", isOn: $wmOn).onChange(of: wmOn) { UserDefaults.standard.set($0, forKey: "wmOn") }
+                        DarkField(label: "Seu perfil", text: $wmText)
+                            .onChange(of: wmText) { UserDefaults.standard.set($0, forKey: "wmText") }
+                        Text("Aparece no canto de baixo do mapa, com um ícone de câmera.").font(.system(size: 13)).foregroundColor(UI.dim)
                     }
                     section("Relógio da moto") {
                         Button {

@@ -18,7 +18,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: Vendor/openh264
-          key: openh264-v2.4.1-ios16-arm64
+          key: openh264-v2.4.1-ios16-arm64-intel
 
       - name: Compilar OpenH264 (codificador para o iPhone bloqueado)
         if: steps.oh264.outputs.cache-hit != 'true'

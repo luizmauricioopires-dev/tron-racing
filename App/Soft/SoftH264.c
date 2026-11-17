@@ -16,15 +16,41 @@ SoftH264 *sh264_create(int w, int h, float fps, int bitrate) {
     SoftH264 *s = calloc(1, sizeof(SoftH264));
     if (!s) return NULL;
     if (WelsCreateSVCEncoder(&s->enc) != 0 || !s->enc) { free(s); return NULL; }
-    SEncParamBase p;
+    // Parâmetros explícitos para um vídeo bem simples, igual ao do chip de vídeo (que o painel
+    // decodifica liso): perfil Baseline, 1 fatia, 1 quadro de referência, sem recursos extras.
+    SEncParamExt p;
     memset(&p, 0, sizeof(p));
+    (*s->enc)->GetDefaultParams(s->enc, &p);
     p.iUsageType = CAMERA_VIDEO_REAL_TIME;
     p.fMaxFrameRate = fps;
     p.iPicWidth = w;
     p.iPicHeight = h;
     p.iTargetBitrate = bitrate;
+    p.iMaxBitrate = bitrate * 2;
     p.iRCMode = RC_BITRATE_MODE;
-    if ((*s->enc)->Initialize(s->enc, &p) != 0) {
+    p.bEnableFrameSkip = false;
+    p.iSpatialLayerNum = 1;
+    p.iTemporalLayerNum = 1;
+    p.iNumRefFrame = 1;
+    p.bEnableLongTermReference = false;
+    p.iEntropyCodingModeFlag = 0;
+    p.iMultipleThreadIdc = 1;
+    p.bEnableSceneChangeDetect = false;
+    p.bEnableBackgroundDetection = false;
+    p.bEnableAdaptiveQuant = false;
+    p.bEnableDenoise = false;
+    p.bPrefixNalAddingCtrl = false;
+    p.eSpsPpsIdStrategy = CONSTANT_ID;
+    p.uiIntraPeriod = (unsigned int)(fps * 2);
+    p.iComplexityMode = LOW_COMPLEXITY;
+    p.sSpatialLayers[0].iVideoWidth = w;
+    p.sSpatialLayers[0].iVideoHeight = h;
+    p.sSpatialLayers[0].fFrameRate = fps;
+    p.sSpatialLayers[0].iSpatialBitrate = bitrate;
+    p.sSpatialLayers[0].iMaxSpatialBitrate = bitrate * 2;
+    p.sSpatialLayers[0].uiProfileIdc = PRO_BASELINE;
+    p.sSpatialLayers[0].sSliceArgument.uiSliceMode = SM_SINGLE_SLICE;
+    if ((*s->enc)->InitializeExt(s->enc, &p) != 0) {
         WelsDestroySVCEncoder(s->enc);
         free(s);
         return NULL;
@@ -33,9 +59,6 @@ SoftH264 *sh264_create(int w, int h, float fps, int bitrate) {
     (*s->enc)->SetOption(s->enc, ENCODER_OPTION_TRACE_LEVEL, &quiet);
     int fmt = videoFormatI420;
     (*s->enc)->SetOption(s->enc, ENCODER_OPTION_DATAFORMAT, &fmt);
-    // nunca pular quadro para segurar a taxa: o painel desiste se ficar sem quadro novo
-    bool noSkip = false;
-    (*s->enc)->SetOption(s->enc, ENCODER_OPTION_RC_FRAME_SKIP, &noSkip);
     int idr = (int)(fps * 2); // quadro-chave a cada ~2 s
     (*s->enc)->SetOption(s->enc, ENCODER_OPTION_IDR_INTERVAL, &idr);
     s->w = w; s->h = h; s->fps = fps;

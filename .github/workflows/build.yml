@@ -3,12 +3,28 @@ name: Compilar IPA
 on:
   push:
   workflow_dispatch:
+  schedule:
+    - cron: '17 * * * *'
 
 permissions:
   contents: write
 
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      need: ${{ steps.c.outputs.need }}
+    steps:
+      - id: c
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pub=$(gh release view ultima -R "$GITHUB_REPOSITORY" --json targetCommitish -q .targetCommitish || true)
+          if [ "${{ github.event_name }}" = "schedule" ] && [ "$pub" = "$GITHUB_SHA" ]; then echo need=no >> $GITHUB_OUTPUT; else echo need=yes >> $GITHUB_OUTPUT; fi
+
   build:
+    needs: check
+    if: needs.check.outputs.need == 'yes'
     strategy:
       fail-fast: false
       matrix:

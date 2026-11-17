@@ -272,6 +272,7 @@ final class DashLink {
             }
             self.state("No ar! O painel está recebendo o vídeo.", .video)
             self.lock.lock(); self.quickStreak = 0; self.lock.unlock()
+            self.syncClockLater()
             try self.rv.handleData(s)
         }
     }

@@ -85,7 +85,7 @@ final class MapStreamer {
     /// Fluxo contínuo e no mesmo ritmo (como a 0.3.4, a mais estável): 20 quadros/s com a tela
     /// ligada, 12 bloqueado. Com pouco tráfego o Wi-Fi do painel "cochila", ele passa a pedir
     /// quadros devagar (esperas de 3 a 6 s) e acaba derrubando a conexão.
-    /// Fila curta (no máximo 2 quadros esperando) para o mapa não ficar atrasado.
+    /// Fila de até 3 quadros, igual à 0.3.4.
     func kick() {}
 
     private func step() {
@@ -98,8 +98,8 @@ final class MapStreamer {
         let now = Date()
         let interval = panelActive ? (foreground ? 0.05 : 0.083) : 0.5
         if now.timeIntervalSince(lastFrameAt) < interval - 0.01 { return }
-        // o painel ainda não buscou os 2 anteriores: espera (descartar quebraria o vídeo)
-        if panelActive && FrameHub.shared.backlog >= 2 && !forceKey { waits += 1; return }
+        // o painel ainda não buscou os 3 anteriores: espera (descartar quebraria o vídeo)
+        if panelActive && FrameHub.shared.backlog >= 3 && !forceKey { waits += 1; return }
         lastFrameAt = now
         guard let r = renderer else { return }
         let wantPreview = previewActive && foreground && tick % 20 == 0

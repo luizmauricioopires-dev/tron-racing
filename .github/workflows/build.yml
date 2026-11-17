@@ -9,7 +9,12 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, macos-15-intel, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -18,7 +23,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: Vendor/openh264
-          key: openh264-v2.4.1-ios16-arm64-intel
+          key: openh264-v2.4.1-ios16-arm64-${{ matrix.os }}
 
       - name: Compilar OpenH264 (codificador para o iPhone bloqueado)
         if: steps.oh264.outputs.cache-hit != 'true'
@@ -63,17 +68,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          if gh release view ultima --json targetCommitish -q .targetCommitish | grep -q "$GITHUB_SHA"; then echo "ja publicado por outro Mac"; exit 0; fi
           gh release delete ultima --yes --cleanup-tag || true
-          gh release create ultima TronRacing.ipa --title "Tron Racing (última compilação)" \
+          gh release create ultima TronRacing.ipa --target "$GITHUB_SHA" --title "Tron Racing (última compilação)" \
             --notes "Compilado de ${GITHUB_SHA::7}. Baixe o TronRacing.ipa e assine no 3uTools ou Sideloadly." --latest
 
       - uses: actions/upload-artifact@v4
         with:
-          name: TronRacing-ipa
+          name: TronRacing-ipa-${{ matrix.os }}
           path: TronRacing.ipa
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: log-da-compilacao
+          name: log-da-compilacao-${{ matrix.os }}
           path: build.log

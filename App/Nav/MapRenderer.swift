@@ -282,23 +282,28 @@ final class MapRenderer {
 
     // ------------------------------------------------------------------ marca (para os vídeos)
 
-    private static let camIcon = UIImage(systemName: "camera.fill",
-        withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .bold))?.withTintColor(.white, renderingMode: .alwaysOriginal)
+    private static let instaLogo = UIImage(named: "InstaLogo")
 
     private func drawWatermark(_ ctx: CGContext, left: CGFloat) {
         let d = UserDefaults.standard
         guard d.object(forKey: "wmOn") as? Bool ?? true else { return }
         let handle = (d.string(forKey: "wmText") ?? "@vlog.tron").trimmingCharacters(in: .whitespaces)
         guard !handle.isEmpty else { return }
-        let font = UIFont.systemFont(ofSize: 17, weight: .bold)
+        let k = CGFloat(min(max(d.object(forKey: "wmScale") as? Double ?? 1.0, 0.6), 2.0))
+        let fs = 17 * k
+        let font = UIFont.systemFont(ofSize: fs, weight: .bold)
         let tw = (handle as NSString).size(withAttributes: [.font: font]).width
         let H = CGFloat(height)
-        let r = CGRect(x: left + 12, y: H - 46, width: tw + 50, height: 34)
-        roundRect(ctx, r, 17, UIColor.black.withAlphaComponent(0.55))
-        let badge = CGRect(x: r.minX + 5, y: r.minY + 5, width: 24, height: 24)
-        roundRect(ctx, badge, 7, UIColor(red: 1.0, green: 0.42, blue: 0.16, alpha: 1))
-        Self.camIcon?.draw(in: badge.insetBy(dx: 4, dy: 5))
-        text(handle, 17, .bold, .white, in: CGRect(x: badge.maxX + 8, y: r.minY + 6, width: tw + 6, height: 22))
+        let h = 34 * k
+        let r = CGRect(x: left + 12, y: H - 12 - h, width: tw + 50 * k, height: h)
+        roundRect(ctx, r, h / 2, UIColor.black.withAlphaComponent(0.55))
+        let logo = CGRect(x: r.minX + 4 * k, y: r.minY + 4 * k, width: 26 * k, height: 26 * k)
+        if let img = Self.instaLogo {
+            img.draw(in: logo)
+        } else {
+            roundRect(ctx, logo, 7 * k, UIColor(red: 0.88, green: 0.19, blue: 0.42, alpha: 1))
+        }
+        text(handle, fs, .bold, .white, in: CGRect(x: logo.maxX + 7 * k, y: r.midY - fs * 0.66, width: tw + 6, height: fs * 1.35))
     }
 
     // ------------------------------------------------------------------ setas

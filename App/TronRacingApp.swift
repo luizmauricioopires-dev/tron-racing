@@ -235,6 +235,7 @@ struct SettingsScreen: View {
     @State private var clockMsg: String?
     @State private var wmOn = UserDefaults.standard.object(forKey: "wmOn") as? Bool ?? true
     @State private var wmText = UserDefaults.standard.string(forKey: "wmText") ?? "@vlog.tron"
+    @State private var wmScale = UserDefaults.standard.object(forKey: "wmScale") as? Double ?? 1.0
 
     private func importVideo(_ item: PhotosPickerItem?) {
         guard let item = item else { return }
@@ -279,7 +280,22 @@ struct SettingsScreen: View {
                         Toggle("Mostrar no mapa do painel", isOn: $wmOn).onChange(of: wmOn) { UserDefaults.standard.set($0, forKey: "wmOn") }
                         DarkField(label: "Seu perfil", text: $wmText)
                             .onChange(of: wmText) { UserDefaults.standard.set($0, forKey: "wmText") }
-                        Text("Aparece no canto de baixo do mapa, com um ícone de câmera.").font(.system(size: 13)).foregroundColor(UI.dim)
+                        HStack {
+                            Text("Tamanho").foregroundColor(.white)
+                            Slider(value: $wmScale, in: 0.6...2.0, step: 0.1)
+                                .tint(UI.accent)
+                                .onChange(of: wmScale) { UserDefaults.standard.set($0, forKey: "wmScale") }
+                            Text("\(Int((wmScale * 100).rounded()))%").font(.system(size: 14, weight: .semibold).monospacedDigit())
+                                .foregroundColor(UI.dim).frame(width: 48, alignment: .trailing)
+                        }
+                        HStack(spacing: 7 * wmScale) {
+                            Image("InstaLogo").resizable().frame(width: 26 * wmScale, height: 26 * wmScale)
+                            Text(wmText).font(.system(size: 17 * wmScale, weight: .bold)).foregroundColor(.white).lineLimit(1)
+                        }
+                        .padding(.leading, 4 * wmScale).padding(.trailing, 14 * wmScale).padding(.vertical, 4 * wmScale)
+                        .background(Capsule().fill(Color.black.opacity(0.55)))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        Text("Prévia de como aparece no canto de baixo do mapa do painel.").font(.system(size: 13)).foregroundColor(UI.dim)
                     }
                     section("Relógio da moto") {
                         Button {
@@ -288,7 +304,7 @@ struct SettingsScreen: View {
                             Label("Acertar o relógio agora", systemImage: "clock.arrow.2.circlepath").frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.borderedProminent).tint(UI.accent)
-                        Text(clockMsg ?? "O app acerta sozinho ao conectar (e de novo alguns segundos depois).")
+                        Text(clockMsg ?? "O app acerta sozinho ao conectar.")
                             .font(.system(size: 13)).foregroundColor(UI.dim)
                     }
                     section("Acesso Pessoal") {

@@ -92,11 +92,7 @@ final class RvServer {
                 Log.d(String(format: "RV-DATA <- comando inesperado 0x%04X", cmd))
                 continue
             }
-            var frame = hub.frames.pollNow()
-            if frame == nil {
-                hub.wantFrame()
-                frame = hub.frames.poll(timeout: 0.08)
-            }
+            var frame = hub.frames.poll(timeout: 0.025)
             // só começa a mandar a partir de um quadro-chave
             while let f = frame, waitingKey, !f.key { frame = hub.frames.pollNow() }
             guard let f = frame else { empty += 1; try s.write(zero); continue }

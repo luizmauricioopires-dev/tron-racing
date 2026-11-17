@@ -82,23 +82,24 @@ final class MapStreamer {
 
     /// Sempre o codificador do processador: assim o vídeo não muda de formato quando o iPhone
     /// bloqueia ou desbloqueia (essa troca no meio da transmissão travava o painel).
-    /// Quadro sob demanda: só desenha um novo quando o painel já levou o anterior (ou pede e não
-    /// há nenhum pronto). Assim o painel sempre recebe o mapa "de agora", sem fila atrasada.
-    /// O painel pediu quadro e não havia nenhum pronto: desenha já.
-    func kick() { q.async { self.step(kicked: true) } }
+    /// Fluxo contínuo e no mesmo ritmo (como a 0.3.4, a mais estável): 20 quadros/s com a tela
+    /// ligada, 12 bloqueado. Com pouco tráfego o Wi-Fi do painel "cochila", ele passa a pedir
+    /// quadros devagar (esperas de 3 a 6 s) e acaba derrubando a conexão.
+    /// Fila curta (no máximo 2 quadros esperando) para o mapa não ficar atrasado.
+    func kick() {}
 
-    private func step(kicked: Bool = false) {
+    private func step() {
         tick += 1
         let foreground = AppForeground.isActive
         if lastFg != foreground {
             lastFg = foreground
-            if panelActive { Log.d("mapa: \(foreground ? "tela ligada" : "iPhone bloqueado") (quadro sob demanda)") }
+            if panelActive { Log.d("mapa: \(foreground ? "tela ligada, 20" : "iPhone bloqueado, 12") quadros/s") }
         }
         let now = Date()
-        let interval = panelActive ? (foreground ? 0.05 : 0.1) : 0.5
+        let interval = panelActive ? (foreground ? 0.05 : 0.083) : 0.5
         if now.timeIntervalSince(lastFrameAt) < interval - 0.01 { return }
-        // já tem um quadro esperando o painel: não desenha outro (ele ficaria velho na fila)
-        if panelActive && FrameHub.shared.backlog >= 1 && !forceKey { if !kicked { waits += 1 }; return }
+        // o painel ainda não buscou os 2 anteriores: espera (descartar quebraria o vídeo)
+        if panelActive && FrameHub.shared.backlog >= 2 && !forceKey { waits += 1; return }
         lastFrameAt = now
         guard let r = renderer else { return }
         let wantPreview = previewActive && foreground && tick % 20 == 0
@@ -109,7 +110,7 @@ final class MapStreamer {
         if let img = img, let cb = onPreview { DispatchQueue.main.async { cb(img) } }
         guard panelActive else { return }
         if sw == nil || sw!.width != w {
-            sw = SoftEncoder(width: w, height: h, fps: 10, bitrate: 600_000)
+            sw = SoftEncoder(width: w, height: h, fps: 20, bitrate: 1_500_000)
             forceKey = true
             if sw == nil { Log.d("vídeo do mapa: não consegui criar o codificador"); return }
         }
@@ -128,7 +129,7 @@ final class MapStreamer {
         sent += 1
         if Date().timeIntervalSince(lastLog) > 15 {
             let m = max(1, measured)
-            Log.d("mapa: \(sent) quadros em 15 s (desenho \(Int(renderMs / Double(m))) ms, vídeo \(Int(encodeMs / Double(m))) ms, quadro pronto esperando o painel \(waits)x)")
+            Log.d("mapa: \(sent) quadros em 15 s (desenho \(Int(renderMs / Double(m))) ms, vídeo \(Int(encodeMs / Double(m))) ms, esperou o painel \(waits)x)")
             renderMs = 0; encodeMs = 0; measured = 0; waits = 0
             sent = 0
             lastLog = Date()

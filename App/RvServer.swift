@@ -92,10 +92,15 @@ final class RvServer {
                 Log.d(String(format: "RV-DATA <- comando inesperado 0x%04X", cmd))
                 continue
             }
-            var frame = hub.frames.poll(timeout: 0.025)
+            var frame = hub.frames.pollNow()
+            if frame == nil {
+                hub.wantFrame()
+                frame = hub.frames.poll(timeout: 0.08)
+            }
             // só começa a mandar a partir de um quadro-chave
             while let f = frame, waitingKey, !f.key { frame = hub.frames.pollNow() }
             guard let f = frame else { empty += 1; try s.write(zero); continue }
+            if f.key && waitingKey { Log.d("RV -> primeiro quadro entregue ao painel (\(f.data.count / 1024) KB)") }
             if f.key { waitingKey = false }
             let au = RvServer.aud + f.data
             var pkt = [UInt8]()

@@ -75,9 +75,26 @@ final class DashLink {
     }
 
     /// Conexão caiu (moto desligada, saiu do alcance): fecha tudo e procura de novo.
+    /// Reconexões rápidas seguidas (só pelo Wi-Fi). Zera quando o vídeo volta.
+    private var quickStreak = 0
+
     private func onSessionLost() {
         lock.lock()
         guard running, sessionStarted else { lock.unlock(); return }
+        // 1ª tentativa: o painel costuma continuar no Acesso Pessoal; só acorda ele de novo pelo
+        // Wi-Fi (1 a 3 s), sem refazer o Bluetooth e sem abrir os Ajustes.
+        if let ip = panelIp, quickStreak < 1 {
+            quickStreak += 1
+            sessionGen += 1
+            let socks = sockets
+            sockets = []
+            lock.unlock()
+            socks.forEach { $0.close() }
+            FrameHub.shared.panelStoppedVideo()
+            state("Conexão piscou. Reconectando direto pelo Wi-Fi...", .linking)
+            DispatchQueue.global().asyncAfter(deadline: .now() + 1) { self.sendWakeup(ip, quick: true) }
+            return
+        }
         sessionStarted = false
         sessionGen += 1
         let socks = sockets, b = ble
@@ -184,9 +201,9 @@ final class DashLink {
 
     private func wakeupBody() -> [String: Any] { ["phoneType": "Android", "packageName": DashLink.packageName] }
 
-    private func sendWakeup(_ panel: String) {
+    private func sendWakeup(_ panel: String, quick: Bool = false) {
         lock.lock(); let gen = sessionGen; let local = phoneIp; lock.unlock()
-        for attempt in 1...20 {
+        for attempt in 1...(quick ? 8 : 20) {
             if !isRunning || gen != currentGen { return }
             do {
                 let s = try TCPSocket.connect(host: panel, port: Pxc.portWakeup, bindIP: local, timeout: 3)
@@ -202,7 +219,7 @@ final class DashLink {
                 } else {
                     state("Painel respondeu status=\(ok). Veja o diário.", .error)
                 }
-                reprobeIfSilent(panel, gen: gen)
+                reprobeIfSilent(panel, gen: gen, tries: quick ? 1 : 3)
                 return
             } catch {
                 if attempt <= 3 || attempt % 5 == 0 { Log.d("wakeup tentativa \(attempt) falhou: \(error)") }
@@ -216,12 +233,12 @@ final class DashLink {
     private var currentGen: Int { lock.lock(); defer { lock.unlock() }; return sessionGen }
 
     /// Às vezes o painel aceita o wakeup e não conecta de volta: manda de novo (até 3 vezes).
-    private func reprobeIfSilent(_ panel: String, gen: Int) {
-        for i in 1...3 {
+    private func reprobeIfSilent(_ panel: String, gen: Int, tries: Int = 3) {
+        for i in 1...tries {
             Thread.sleep(forTimeInterval: 8)
             lock.lock(); let opened = c2pOpenedGen == gen; let g = sessionGen; lock.unlock()
             if !isRunning || g != gen || opened { return }
-            Log.d("painel não conectou de volta em 8 s; wakeup de novo (\(i)/3)")
+            Log.d("painel não conectou de volta em 8 s; wakeup de novo (\(i)/\(tries))")
             do {
                 let s = try TCPSocket.connect(host: panel, port: Pxc.portWakeup, bindIP: phoneIp, timeout: 3)
                 defer { s.close() }
@@ -254,6 +271,7 @@ final class DashLink {
                 if n == 0 { self.watchVideo() }
             }
             self.state("No ar! O painel está recebendo o vídeo.", .video)
+            self.lock.lock(); self.quickStreak = 0; self.lock.unlock()
             self.syncClockLater()
             try self.rv.handleData(s)
         }
@@ -311,10 +329,11 @@ final class DashLink {
         startPhoneHeartbeat(s)
         switch first.cmd {
         case Pxc.connC2P:
-            lock.lock(); c2pOpenedGen = sessionGen; lock.unlock()
+            lock.lock(); c2pOpenedGen = sessionGen; let myGen = sessionGen; lock.unlock()
             // sem nada por 12 s = moto desligada (o TCP não fecha sozinho)
             s.setReadTimeout(12)
-            defer { onSessionLost() }
+            // só derruba a sessão se ainda for a mesma (fechar sockets velhos não conta)
+            defer { if currentGen == myGen { onSessionLost() } }
             try c2pLoop(s)
         case Pxc.connP2C:
             try p2cLoop(s)
@@ -344,10 +363,14 @@ final class DashLink {
                 // painel novo às vezes fica mudo no C2P com o vídeo rodando: se o vídeo/P2C anda, está vivo
                 lock.lock(); let p2c = lastP2cRxAt; lock.unlock()
                 let now = Date()
-                if now.timeIntervalSince(rv.lastPollAt) < 5 || now.timeIntervalSince(p2c) < 6 {
+                // só desiste depois de 25 s sem NADA do painel (vídeo, P2C ou C2P)
+                let quiet = min(now.timeIntervalSince(rv.lastPollAt), now.timeIntervalSince(p2c))
+                if quiet < 25 {
                     if !silentLogged { Log.d("C2P mudo há 12 s, mas o painel segue respondendo: mantendo"); silentLogged = true }
+                    if quiet > 8 { Log.d("painel quieto há \(Int(quiet)) s; aguardando (desiste aos 25 s)") }
                     continue
                 }
+                Log.d("painel sem responder há \(Int(quiet)) s: refazendo a conexão")
                 throw SockError.timeout
             }
             let c = p.cmd

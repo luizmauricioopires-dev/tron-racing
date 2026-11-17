@@ -90,6 +90,9 @@ final class FrameHub: ObservableObject {
         }
     }
 
+    /// O painel pediu quadro e a fila está vazia: no mapa próprio, desenha um na hora.
+    func wantFrame() { if !hasExt { MapStreamer.shared.kick() } }
+
     /// Quantos quadros o painel ainda não buscou (para o mapa não produzir mais do que ele dá conta).
     var backlog: Int { frames.count }
 

@@ -99,6 +99,7 @@ struct HomeView: View {
     @StateObject private var broadcast = BroadcastTrigger()
     @State private var showNav = false
     @State private var showTrips = false
+    @State private var showPista = false
     @ObservedObject private var trips = TripRecorder.shared
     @State private var showSettings = false
     @State private var voiceOn = Voice.shared.enabled
@@ -121,6 +122,14 @@ struct HomeView: View {
                     Button { showNav = true } label: {
                         BigCard(color: UI.accent, icon: "location.north.line.fill", title: "Navegação",
                                 subtitle: nav.navigating ? "Indo para \(nav.destination?.name ?? "destino")" : "Mapa próprio no painel")
+                    }
+                    .buttonStyle(.plain)
+                    Button { showPista = true } label: {
+                        BigCard(color: Color(red: 0.23, green: 0.63, blue: 1), icon: "gauge.with.dots.needle.67percent", title: "Modo Pista",
+                                subtitle: UserDefaults.standard.string(forKey: "panelScreen") == "pista"
+                                    ? "No painel agora · ângulo de inclinação" : "Ângulo de inclinação no painel") {
+                            EmptyView()
+                        }
                     }
                     .buttonStyle(.plain)
                     Button { showTrips = true } label: {
@@ -156,6 +165,7 @@ struct HomeView: View {
         }
         .fullScreenCover(isPresented: $showNav) { NavigationScreen().environmentObject(nav) }
         .sheet(isPresented: $showTrips) { TripsScreen() }
+        .sheet(isPresented: $showPista) { PistaScreen() }
         .sheet(isPresented: $showSettings) {
             SettingsScreen().environmentObject(model).environmentObject(hub)
         }
@@ -235,6 +245,7 @@ struct SettingsScreen: View {
     @State private var clockMsg: String?
     @State private var wmOn = UserDefaults.standard.object(forKey: "wmOn") as? Bool ?? true
     @State private var wmText = UserDefaults.standard.string(forKey: "wmText") ?? "@vlog.tron"
+    @State private var safeFrac = UserDefaults.standard.object(forKey: "safeFrac") as? Double ?? 0.62
     @State private var wmScale = UserDefaults.standard.object(forKey: "wmScale") as? Double ?? 1.0
 
     private func importVideo(_ item: PhotosPickerItem?) {
@@ -295,7 +306,19 @@ struct SettingsScreen: View {
                         .padding(.leading, 4 * wmScale).padding(.trailing, 14 * wmScale).padding(.vertical, 4 * wmScale)
                         .background(Capsule().fill(Color.black.opacity(0.55)))
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        Text("Prévia de como aparece no canto de baixo do mapa do painel.").font(.system(size: 13)).foregroundColor(UI.dim)
+                        Text("Prévia de como aparece no painel (canto esquerdo, logo acima dos mostradores da moto).").font(.system(size: 13)).foregroundColor(UI.dim)
+                    }
+                    section("Área livre do painel") {
+                        HStack {
+                            Text("Altura").foregroundColor(.white)
+                            Slider(value: $safeFrac, in: 0.4...1.0, step: 0.02)
+                                .tint(UI.accent)
+                                .onChange(of: safeFrac) { UserDefaults.standard.set($0, forKey: "safeFrac") }
+                            Text("\(Int((safeFrac * 100).rounded()))%").font(.system(size: 14, weight: .semibold).monospacedDigit())
+                                .foregroundColor(UI.dim).frame(width: 48, alignment: .trailing)
+                        }
+                        Text("Parte de cima da tela que fica visível acima dos mostradores da moto. Velocidade, direções e a marca ficam dentro dela. Ajuste com o painel ligado até nada ficar escondido.")
+                            .font(.system(size: 13)).foregroundColor(UI.dim)
                     }
                     section("Relógio da moto") {
                         Button {

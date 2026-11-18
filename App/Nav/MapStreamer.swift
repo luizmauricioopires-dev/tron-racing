@@ -11,6 +11,8 @@ final class MapStreamer {
     private let q = DispatchQueue(label: "tron.map", qos: .userInitiated)
     private var timer: DispatchSourceTimer?
     private var renderer: MapRenderer?
+    private var track: TrackRenderer?
+    private var trackOn = false
     private var hw: H264Encoder?
     private var sw: SoftEncoder?
     private var usingSoft = false
@@ -33,6 +35,7 @@ final class MapStreamer {
             if self.w != width || self.h != height || self.renderer == nil {
                 self.w = width; self.h = height
                 self.renderer = MapRenderer(width: width, height: height)
+                self.track = nil
                 self.hw = nil; self.sw = nil
             }
             self.panelActive = true
@@ -46,6 +49,7 @@ final class MapStreamer {
         q.async {
             guard self.panelActive else { return }
             self.panelActive = false
+            if self.trackOn { self.trackOn = false; LeanSensor.shared.stop() }
             self.hw?.invalidate(); self.hw = nil; self.sw = nil
             Log.d("mapa próprio parou de ir ao painel")
             self.ensureTimer()
@@ -103,8 +107,23 @@ final class MapStreamer {
         lastFrameAt = now
         guard let r = renderer else { return }
         let wantPreview = previewActive && foreground && tick % 20 == 0
+        // Modo Pista (ângulo de inclinação) ou mapa: mesmo tamanho e mesmo codificador, troca sem cortar
+        let pista = panelActive && UserDefaults.standard.string(forKey: "panelScreen") == "pista"
+        if pista != trackOn {
+            trackOn = pista
+            if pista { LeanSensor.shared.start() } else { LeanSensor.shared.stop() }
+            Log.d(pista ? "painel: Modo Pista" : "painel: mapa")
+        }
         let t0 = CFAbsoluteTimeGetCurrent()
-        guard let out = r.render(NavEngine.shared.snapshot(), makeImage: wantPreview) else { return }
+        let snap = NavEngine.shared.snapshot()
+        let rendered: (CVPixelBuffer, CGImage?)?
+        if pista {
+            if track == nil { track = TrackRenderer(width: w, height: h) }
+            rendered = track!.render(snap, makeImage: wantPreview)
+        } else {
+            rendered = r.render(snap, makeImage: wantPreview)
+        }
+        guard let out = rendered else { return }
         renderMs += (CFAbsoluteTimeGetCurrent() - t0) * 1000
         let (pb, img) = out
         if let img = img, let cb = onPreview { DispatchQueue.main.async { cb(img) } }

@@ -52,8 +52,10 @@ final class MapRenderer {
         defer { UIGraphicsPopContext() }
 
         let W = CGFloat(width), H = CGFloat(height)
+        // a parte de baixo da tela fica sob os mostradores da moto: tudo o que importa vai em cima
+        let safe = H * TrackRenderer.safeFraction
         let panelW: CGFloat = s.navigating ? min(270, W * 0.34) : 0
-        let anchor = CGPoint(x: panelW + (W - panelW) / 2, y: H * 0.70)
+        let anchor = CGPoint(x: panelW + (W - panelW) / 2, y: safe * 0.74)
         ctx.setFillColor(Self.bg.cgColor)
         ctx.fill(CGRect(x: 0, y: 0, width: W, height: H))
 
@@ -84,14 +86,14 @@ final class MapRenderer {
             }
             drawUser(ctx, at: anchor)
             text("Mapas da Apple", 9, .regular, Self.gray.withAlphaComponent(0.7),
-                 in: CGRect(x: W - 210, y: H - 104, width: 200, height: 12), align: .right)
+                 in: CGRect(x: W - 320, y: safe - 16, width: 200, height: 12), align: .right)
         } else {
-            text("Aguardando GPS…", 24, .semibold, Self.gray, in: CGRect(x: 0, y: H / 2 - 16, width: W, height: 32), align: .center)
+            text("Aguardando GPS…", 24, .semibold, Self.gray, in: CGRect(x: 0, y: safe / 2 - 16, width: W, height: 32), align: .center)
         }
 
-        if s.navigating { drawNavPanel(ctx, s, width: panelW) } else { drawClock(ctx, now) }
-        drawWatermark(ctx, left: panelW)
-        drawSpeed(ctx, s)
+        if s.navigating { drawNavPanel(ctx, s, width: panelW, safe: safe) } else { drawClock(ctx, now) }
+        drawWatermark(ctx, left: panelW, safe: safe)
+        drawSpeed(ctx, s, safe: safe)
         if let a = s.radar { drawRadarBanner(ctx, a) }
 
         let img = makeImage ? ctx.makeImage() : nil
@@ -225,22 +227,19 @@ final class MapRenderer {
         ctx.fillPath()
     }
 
-    private func drawNavPanel(_ ctx: CGContext, _ s: NavEngine.Snapshot, width pw: CGFloat) {
-        let H = CGFloat(height)
-        let box = CGRect(x: 10, y: 10, width: pw - 16, height: H - 20)
+    private func drawNavPanel(_ ctx: CGContext, _ s: NavEngine.Snapshot, width pw: CGFloat, safe: CGFloat) {
+        let box = CGRect(x: 10, y: 10, width: pw - 16, height: safe - 20)
         roundRect(ctx, box, 18, Self.card)
         let m = s.nextStep?.maneuver ?? .straight
-        drawManeuver(ctx, m, in: CGRect(x: box.minX + 14, y: box.minY + 16, width: 82, height: 82))
-        text(Geo.formatDistance(s.distanceToNext), 38, .heavy, .white,
-             in: CGRect(x: box.minX + 104, y: box.minY + 34, width: box.width - 110, height: 46))
+        drawManeuver(ctx, m, in: CGRect(x: box.minX + 12, y: box.minY + 10, width: 66, height: 66))
+        text(Geo.formatDistance(s.distanceToNext), 34, .heavy, .white,
+             in: CGRect(x: box.minX + 86, y: box.minY + 22, width: box.width - 92, height: 42))
         let street = s.nextStep?.street ?? (s.destinationName ?? "Siga em frente")
-        text(street, 21, .semibold, Self.gray, in: CGRect(x: box.minX + 16, y: box.minY + 112, width: box.width - 28, height: 84), lines: 3)
-        ctx.setFillColor(UIColor.white.withAlphaComponent(0.1).cgColor)
-        ctx.fill(CGRect(x: box.minX + 16, y: box.maxY - 92, width: box.width - 32, height: 1.5))
+        text(street, 19, .semibold, Self.gray, in: CGRect(x: box.minX + 14, y: box.minY + 84, width: box.width - 24, height: 50), lines: 2)
         let eta = Date().addingTimeInterval(s.remainingTime)
-        text("Chegada " + Geo.clock(eta), 21, .bold, .white, in: CGRect(x: box.minX + 16, y: box.maxY - 80, width: box.width - 28, height: 28))
-        text("\(Geo.formatDuration(s.remainingTime)) · \(Geo.formatDistance(s.remainingDistance))", 17, .medium, Self.gray,
-             in: CGRect(x: box.minX + 16, y: box.maxY - 46, width: box.width - 28, height: 24))
+        text("Chegada " + Geo.clock(eta), 19, .bold, .white, in: CGRect(x: box.minX + 14, y: box.maxY - 52, width: box.width - 24, height: 24))
+        text("\(Geo.formatDuration(s.remainingTime)) · \(Geo.formatDistance(s.remainingDistance))", 15, .medium, Self.gray,
+             in: CGRect(x: box.minX + 14, y: box.maxY - 28, width: box.width - 24, height: 20))
     }
 
     private func drawClock(_ ctx: CGContext, _ now: Date) {
@@ -249,10 +248,10 @@ final class MapRenderer {
         text(Geo.clock(now), 30, .bold, .white, in: CGRect(x: r.minX, y: r.minY + 9, width: r.width, height: 36), align: .center)
     }
 
-    private func drawSpeed(_ ctx: CGContext, _ s: NavEngine.Snapshot) {
-        let W = CGFloat(width), H = CGFloat(height)
+    private func drawSpeed(_ ctx: CGContext, _ s: NavEngine.Snapshot, safe: CGFloat) {
+        let W = CGFloat(width)
         let kmh = Int((s.speed * 3.6).rounded())
-        let c = CGPoint(x: W - 56, y: H - 56)
+        let c = CGPoint(x: W - 56, y: safe - 52)
         let r = CGRect(x: c.x - 42, y: c.y - 42, width: 84, height: 84)
         ctx.setFillColor(Self.card.cgColor)
         ctx.fillEllipse(in: r)
@@ -284,7 +283,7 @@ final class MapRenderer {
 
     private static let instaLogo = UIImage(named: "InstaLogo")
 
-    private func drawWatermark(_ ctx: CGContext, left: CGFloat) {
+    private func drawWatermark(_ ctx: CGContext, left: CGFloat, safe: CGFloat) {
         let d = UserDefaults.standard
         guard d.object(forKey: "wmOn") as? Bool ?? true else { return }
         let handle = (d.string(forKey: "wmText") ?? "@vlog.tron").trimmingCharacters(in: .whitespaces)
@@ -293,9 +292,8 @@ final class MapRenderer {
         let fs = 17 * k
         let font = UIFont.systemFont(ofSize: fs, weight: .bold)
         let tw = (handle as NSString).size(withAttributes: [.font: font]).width
-        let H = CGFloat(height)
         let h = 34 * k
-        let r = CGRect(x: left + 12, y: H - 12 - h, width: tw + 50 * k, height: h)
+        let r = CGRect(x: left + 12, y: safe - 10 - h, width: tw + 50 * k, height: h)
         roundRect(ctx, r, h / 2, UIColor.black.withAlphaComponent(0.55))
         let logo = CGRect(x: r.minX + 4 * k, y: r.minY + 4 * k, width: 26 * k, height: 26 * k)
         if let img = Self.instaLogo {

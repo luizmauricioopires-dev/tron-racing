@@ -4,7 +4,9 @@ import SwiftUI
 struct PistaScreen: View {
     @Environment(\.dismiss) private var dismiss
     @State private var onPanel = UserDefaults.standard.string(forKey: "panelScreen") == "pista"
-    @State private var lean = 0.0, maxL = 0.0, maxR = 0.0
+    @State private var lean = 0.0
+    @State private var maxL = 0.0
+    @State private var maxR = 0.0
     @State private var ok = false
     @State private var msg: String?
     private let tick = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()

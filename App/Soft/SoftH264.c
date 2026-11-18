@@ -36,6 +36,12 @@ SoftH264 *sh264_create(int w, int h, float fps, int bitrate) {
     // nunca pular quadro para segurar a taxa: o painel desiste se ficar sem quadro novo
     bool noSkip = false;
     (*s->enc)->SetOption(s->enc, ENCODER_OPTION_RC_FRAME_SKIP, &noSkip);
+    // teto de taxa: acima de ~600 kbit/s o painel engasga, para de pedir quadros e derruba
+    SBitrateInfo maxBr;
+    memset(&maxBr, 0, sizeof(maxBr));
+    maxBr.iLayer = SPATIAL_LAYER_ALL;
+    maxBr.iBitrate = bitrate + bitrate / 2;
+    (*s->enc)->SetOption(s->enc, ENCODER_OPTION_MAX_BITRATE, &maxBr);
     int idr = (int)(fps * 2); // quadro-chave a cada ~2 s
     (*s->enc)->SetOption(s->enc, ENCODER_OPTION_IDR_INTERVAL, &idr);
     s->w = w; s->h = h; s->fps = fps;

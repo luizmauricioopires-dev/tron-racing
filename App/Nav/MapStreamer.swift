@@ -129,7 +129,7 @@ final class MapStreamer {
         if let img = img, let cb = onPreview { DispatchQueue.main.async { cb(img) } }
         guard panelActive else { return }
         if sw == nil || sw!.width != w {
-            sw = SoftEncoder(width: w, height: h, fps: 20, bitrate: 1_500_000)
+            sw = SoftEncoder(width: w, height: h, fps: 20, bitrate: 450_000)
             forceKey = true
             if sw == nil { Log.d("vídeo do mapa: não consegui criar o codificador"); return }
         }

@@ -9,6 +9,9 @@ final class MapRenderer {
     let height: Int
     private var pool: CVPixelBufferPool?
     private var heading: Double = 0
+    /// Ângulo usado no desenho: só muda em passos de 2°. Entre um passo e outro o mapa só
+    /// desliza em pixels inteiros, o que o vídeo comprime muito melhor (menos dados ao painel).
+    private var drawnHeading: Double = 0
     private let tile = Double(TileCache.tilePx) // pixels por tile
 
     // cores
@@ -67,13 +70,19 @@ final class MapRenderer {
             if let course = s.course { heading = Self.smooth(heading, course, 0.35) }
             let z = s.speed * 3.6 > 75 ? 15 : 16
             let center = Geo.world(c, z: z, tile: tile)
-            let angle = CGFloat(-heading * .pi / 180)
+            var dh = (heading - drawnHeading).truncatingRemainder(dividingBy: 360)
+            if dh > 180 { dh -= 360 } else if dh < -180 { dh += 360 }
+            if abs(dh) >= 2 { drawnHeading = (heading / 2).rounded() * 2 }
+            let angle = CGFloat(-drawnHeading * .pi / 180)
             let radius = hypot(max(anchor.x, W - anchor.x), max(anchor.y, H - anchor.y)) + 4
 
             ctx.saveGState()
-            ctx.translateBy(x: anchor.x, y: anchor.y)
+            // ponto p vai para anchor + R(p - center) = R p + (anchor - R center); o deslocamento
+            // é arredondado para pixel inteiro
+            let off = CGPoint(x: (anchor.x - (center.x * cos(angle) - center.y * sin(angle))).rounded(),
+                              y: (anchor.y - (center.x * sin(angle) + center.y * cos(angle))).rounded())
+            ctx.translateBy(x: off.x, y: off.y)
             ctx.rotate(by: angle)
-            ctx.translateBy(x: -center.x, y: -center.y)
             drawCanvas(ctx, center: center, radius: radius, z: z)
             drawRoute(ctx, s, from: c, center: center, radius: radius, z: z)
             ctx.restoreGState()
